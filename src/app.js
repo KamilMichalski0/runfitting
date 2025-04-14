@@ -15,7 +15,7 @@ const compression = require('compression');
 // Import routes
 // const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
-// const planRoutes = require('./routes/plan.routes');
+const planRoutes = require('./routes/plan.routes');
 // const exerciseRoutes = require('./routes/exercise.routes');
 
 // Importowanie middleware obsługi błędów
@@ -95,6 +95,7 @@ app.get('/', (req, res) => {
 
 // Montowanie routerów
 app.use('/api/users', userRoutes);
+app.use('/api/plans', planRoutes);
 
 // Obsługa błędnych ścieżek
 app.all('*', (req, res, next) => {
