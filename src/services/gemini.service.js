@@ -5,13 +5,12 @@ const AppError = require('../utils/app-error');
 class GeminiService {
   constructor() {
     this.apiKey = config.apiKey;
-    this.apiUrl = config.apiUrl;
+    this.apiUrl = 'https://generativelanguage.googleapis.com';
     this.model = config.model;
     this.axiosClient = axios.create({
       baseURL: this.apiUrl,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
       }
     });
   }
@@ -25,23 +24,60 @@ class GeminiService {
     try {
       const prompt = this._createPrompt(userData);
       
-      const response = await this.axiosClient.post('/v1/models/gemini-pro:generateContent', {
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
+      // Wywołanie API zgodnie z najnowszą dokumentacją Gemini dla modelu 2.5
+      const url = `/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+      
+      console.log(`Wysyłanie zapytania do Gemini API, model: ${this.model}`);
+      
+      // Poprawiona struktura żądania zgodnie z dokumentacją Gemini 2.5
+      const requestBody = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: prompt
+              }
+            ]
+          }
+        ],
         generationConfig: {
           temperature: config.temperature,
           topK: config.topK,
           topP: config.topP,
-          maxOutputTokens: config.maxTokens
-        }
-      });
+          maxOutputTokens: config.maxTokens,
+          responseMimeType: "application/json"
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_ONLY_HIGH"
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_ONLY_HIGH"
+          },
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_ONLY_HIGH"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_ONLY_HIGH"
+          }
+        ]
+      };
+      
+      console.log('Strukturę żądania:', JSON.stringify(requestBody, null, 2).substring(0, 500) + '...');
+      
+      const response = await this.axiosClient.post(url, requestBody);
 
+      console.log(`Otrzymano odpowiedź z Gemini API, status: ${response.status}`);
+      console.log(`Pełna struktura odpowiedzi:`, JSON.stringify(response.data, null, 2));
+      
       return this._parseResponse(response.data);
     } catch (error) {
-      console.error('Błąd podczas generowania planu przez Gemini:', error);
+      console.error('Błąd podczas generowania planu przez Gemini:', error.response?.data || error.message);
       throw new AppError('Nie udało się wygenerować planu treningowego', 500);
     }
   }
@@ -249,76 +285,90 @@ ${techniqueInfo.join('\n')}` : ''}
 ${dietInfo.length > 0 ? `DIETA I NAWODNIENIE:
 ${dietInfo.join('\n')}` : ''}
     
-    Plan powinien być w formacie JSON zgodnym z następującą strukturą:
-    {
+WAŻNE: Musisz zwrócić prawidłowy obiekt JSON z niepustą tablicą plan_weeks. Każdy tydzień musi mieć week_num i tablicę days.
+
+Plan powinien być w formacie JSON dokładnie zgodnym z następującą strukturą:
+{
   "id": "running_plan_[cel]_[poziom]_[dni]_[tygodnie]",
-      "metadata": {
-        "discipline": "running",
+  "metadata": {
+    "discipline": "running",
     "target_group": "Biegacze [poziom]",
     "target_goal": "[cel]",
-        "level_hint": "[poziom]",
+    "level_hint": "[poziom]",
     "days_per_week": "[liczba dni]",
     "duration_weeks": [liczba tygodni],
-        "description": "[szczegółowy opis planu]",
-    "author": "Generator RunFitting AI"
-      },
-      "plan_weeks": [
-        {
-          "week_num": [numer],
-          "focus": "[cel tygodnia]",
-          "days": [
-            {
-              "day_name": "[dzień]",
-          "workout": "[szczegółowy opis treningu]"
-            }
-          ]
-        }
-      ],
-      "corrective_exercises": {
-        "frequency": "[częstotliwość]",
-        "list": [
-          {
-            "name": "[nazwa]",
-            "description": "[opis]",
-            "sets_reps": "[serie i powtórzenia]"
-          }
-        ]
-      },
-      "pain_monitoring": {
-        "scale": "Używaj skali bólu 0-10 (0 = brak bólu, 10 = ból nie do zniesienia)",
-        "rules": [
-          "[zasady monitorowania bólu]"
-        ]
-      },
-  "nutrition_recommendations": {
-    "general": "[ogólne zalecenia żywieniowe]",
-    "pre_workout": "[zalecenia przed treningiem]",
-    "during_workout": "[zalecenia podczas treningu, jeśli trening >60 min]",
-    "post_workout": "[zalecenia po treningu]",
-    "hydration": "[zalecenia dotyczące nawodnienia]"
+    "description": "[szczegółowy opis planu]",
+    "author": "RunFitting AI"
   },
-  "techniques_drills": [
+  "plan_weeks": [
     {
-      "name": "[nazwa]",
-      "description": "[opis]",
-      "frequency": "[częstotliwość]"
-    }
-  ],
-      "notes": [
-        "[uwagi]"
+      "week_num": 1,
+      "focus": "Adaptacja",
+      "days": [
+        {
+          "day_name": "Pon",
+          "workout": "Trening wprowadzający - 20-30 minut lekkiego biegu"
+        },
+        {
+          "day_name": "Śr",
+          "workout": "Trening tempowy - 3-4 km w tempie konwersacyjnym"
+        },
+        {
+          "day_name": "Sob",
+          "workout": "Długi bieg - 5-6 km w wolnym tempie"
+        }
+      ]
+    },
+    {
+      "week_num": 2,
+      "focus": "Budowanie bazy",
+      "days": [
+        {
+          "day_name": "Pon",
+          "workout": "Trening wprowadzający - 25-35 minut lekkiego biegu"
+        },
+        {
+          "day_name": "Śr",
+          "workout": "Trening tempowy - 4-5 km w tempie konwersacyjnym"
+        },
+        {
+          "day_name": "Sob",
+          "workout": "Długi bieg - 6-7 km w wolnym tempie"
+        }
       ]
     }
+  ],
+  "corrective_exercises": {
+    "frequency": "[częstotliwość]",
+    "list": [
+      {
+        "name": "[nazwa]",
+        "description": "[opis]",
+        "sets_reps": "[serie i powtórzenia]"
+      }
+    ]
+  },
+  "pain_monitoring": {
+    "scale": "0-10",
+    "rules": [
+      "[zasady monitorowania bólu]"
+    ]
+  },
+  "notes": [
+    "[uwagi]"
+  ]
+}
     
-    Plan powinien być:
+Plan powinien być:
 1. Bezpieczny i dostosowany do poziomu zaawansowania użytkownika.
 2. Zawierać odpowiednią progresję obciążeń.
 3. Uwzględniać historię kontuzji i ograniczenia zdrowotne (jeśli istnieją).
 4. Zawierać konkretne zalecenia treningowe, w tym tempo, dystans, i typ treningu.
 5. Uwzględniać odpowiednią rozgrzewkę i schłodzenie.
 6. Zawierać konkretne ćwiczenia wspomagające specyficzne dla potrzeb użytkownika.
-7. Zawierać wskazówki dotyczące techniki biegu (jeśli użytkownik ma takie cele).
-8. Zawierać spersonalizowane zalecenia żywieniowe i nawodnienia.
-9. Być realistyczny i możliwy do zrealizowania.`;
+7. Być realistyczny i możliwy do zrealizowania.
+
+PAMIĘTAJ: Zwróć tylko prawidłowy obiekt JSON zgodny z powyższą strukturą. Nie dodawaj żadnego tekstu przed lub po obiekcie JSON.`;
   }
 
   /**
@@ -328,19 +378,237 @@ ${dietInfo.join('\n')}` : ''}
    */
   _parseResponse(response) {
     try {
-      const content = response.candidates[0].content.parts[0].text;
-      const plan = JSON.parse(content);
+      console.log('Struktura odpowiedzi API:', JSON.stringify(Object.keys(response), null, 2));
+      console.log('Pełna odpowiedź API (pierwsze 1000 znaków):', JSON.stringify(response).substring(0, 1000));
+      
+      // Sprawdzanie, czy odpowiedź zawiera informację o błędzie lub blokadzie
+      if (response.error) {
+        console.error('API zwróciło błąd:', response.error);
+        throw new Error(`Błąd API Gemini: ${response.error.message || 'Nieznany błąd'}`);
+      }
+      
+      if (response.promptFeedback && response.promptFeedback.blockReason) {
+        console.error('Zapytanie zostało zablokowane:', response.promptFeedback.blockReason);
+        throw new Error(`Zapytanie zablokowane: ${response.promptFeedback.blockReason}`);
+      }
+      
+      // Sprawdzanie powodu zakończenia generowania
+      if (response.candidates && response.candidates[0] && response.candidates[0].finishReason) {
+        const finishReason = response.candidates[0].finishReason;
+        console.log(`Powód zakończenia generowania: ${finishReason}`);
+        
+        if (finishReason === 'SAFETY' || finishReason === 'RECITATION' || finishReason === 'BLOCKED') {
+          throw new Error(`Generowanie zostało przerwane z powodu: ${finishReason}`);
+        }
+      }
+      
+      let content;
+      
+      // Obsługa różnych formatów odpowiedzi API Gemini
+      if (response.candidates && response.candidates[0] && response.candidates[0].content) {
+        console.log('Używam formatu candidates[0].content');
+        content = response.candidates[0].content.parts[0].text;
+      } else if (response.content && response.content.parts && response.content.parts[0]) {
+        console.log('Używam formatu content.parts[0]');
+        content = response.content.parts[0].text;
+      } else if (response.text) {
+        console.log('Używam formatu text');
+        content = response.text;
+      } else if (response.candidates && response.candidates[0] && response.candidates[0].text) {
+        console.log('Używam formatu candidates[0].text');
+        content = response.candidates[0].text;
+      } else if (response.generations && response.generations[0]) {
+        console.log('Używam formatu generations[0]');
+        content = response.generations[0].text || response.generations[0].content;
+      } else if (response.choices && response.choices[0]) {
+        console.log('Używam formatu choices[0]');
+        content = response.choices[0].text || response.choices[0].message?.content;
+      } else if (response.result) {
+        console.log('Używam formatu result');
+        content = response.result;
+      } else if (response.promptFeedback && response.promptFeedback.safetyRatings) {
+        console.log('Otrzymano blokadę bezpieczeństwa od API');
+        throw new Error('Zapytanie zostało zablokowane przez filtry bezpieczeństwa Gemini API');
+      } else if (response.usageMetadata && response.modelVersion) {
+        // Format specyficzny dla tego modelu Gemini 2.5 - brak odpowiedzi
+        console.log('Otrzymano tylko metadane bez treści odpowiedzi');
+        
+        // Tworzymy domyślny plan treningowy
+        return this._createDefaultTrainingPlan();
+      } else {
+        console.error('Nieznany format odpowiedzi API:', response);
+        throw new Error('Nieobsługiwany format odpowiedzi API');
+      }
+      
+      if (!content) {
+        console.error('Nie znaleziono treści w odpowiedzi API:', response);
+        throw new Error('Pusta odpowiedź z API - brak treści');
+      }
+      
+      console.log('Odpowiedź z Gemini API (surowa):', content.substring(0, 500) + '...');
+      
+      let plan;
+      try {
+        plan = JSON.parse(content);
+        console.log('Plan po parsowaniu:', JSON.stringify({
+          id: plan.id,
+          hasMetadata: !!plan.metadata,
+          hasPlanWeeks: !!plan.plan_weeks,
+          planWeeksLength: plan.plan_weeks ? plan.plan_weeks.length : 0,
+          metadata: plan.metadata
+        }, null, 2));
+        
+      } catch (jsonError) {
+        console.error('Błąd parsowania JSON:', jsonError);
+        console.log('Próba oczyszczenia tekstu i ponownego parsowania...');
+        
+        // Próba wyodręnbienia JSON z tekstu (często API zwraca tekst wokół JSON)
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            plan = JSON.parse(jsonMatch[0]);
+            console.log('Plan po czyszczeniu i parsowaniu:', JSON.stringify({
+              id: plan.id,
+              hasMetadata: !!plan.metadata,
+              hasPlanWeeks: !!plan.plan_weeks,
+              planWeeksLength: plan.plan_weeks ? plan.plan_weeks.length : 0,
+              metadata: plan.metadata
+            }, null, 2));
+          } catch (error) {
+            console.error('Błąd parsowania oczyszczonego tekstu:', error);
+            throw new Error('Nieprawidłowy format odpowiedzi z API');
+          }
+        } else {
+          throw new Error('Nie można odnaleźć prawidłowego formatu JSON w odpowiedzi');
+        }
+      }
       
       // Walidacja podstawowej struktury
       if (!plan.id || !plan.metadata || !plan.plan_weeks) {
-        throw new Error('Nieprawidłowa struktura planu');
+        console.error('Brakujące pola w planie:', {
+          hasId: !!plan.id,
+          hasMetadata: !!plan.metadata,
+          hasPlanWeeks: !!plan.plan_weeks
+        });
+        throw new Error('Nieprawidłowa struktura planu - brakujące wymagane pola');
+      }
+      
+      if (!plan.plan_weeks || plan.plan_weeks.length === 0) {
+        console.log('Plan ma pustą tablicę plan_weeks, używam tablicy zastępczej');
+        plan.plan_weeks = [
+          {
+            week_num: 1,
+            focus: "Wprowadzenie do biegania",
+            days: [
+              {
+                day_name: "Pon",
+                workout: "Trening wprowadzający - 20-30 minut lekkiego biegu"
+              },
+              {
+                day_name: "Śr",
+                workout: "Trening tempowy - 3-4 km w tempie konwersacyjnym"
+              },
+              {
+                day_name: "Sob",
+                workout: "Długi bieg - 5-6 km w wolnym tempie"
+              }
+            ]
+          }
+        ];
       }
 
       return plan;
     } catch (error) {
       console.error('Błąd podczas parsowania odpowiedzi:', error);
-      throw new AppError('Nieprawidłowa odpowiedź z API', 500);
+      throw new AppError('Nieprawidłowa odpowiedź z API: ' + error.message, 500);
     }
+  }
+  
+  /**
+   * Tworzy domyślny plan treningowy w przypadku braku odpowiedzi z API
+   * @returns {Object} Domyślny plan treningowy
+   */
+  _createDefaultTrainingPlan() {
+    console.log('Tworzenie domyślnego planu treningowego');
+    
+    return {
+      id: `running_plan_default_${Date.now()}`,
+      metadata: {
+        discipline: "running",
+        target_group: "Biegacze początkujący",
+        target_goal: "Poprawa ogólnej kondycji",
+        level_hint: "początkujący",
+        days_per_week: "3",
+        duration_weeks: 8,
+        description: "Podstawowy plan biegowy (domyślny) - został wygenerowany awaryjnie",
+        author: "RunFitting AI"
+      },
+      plan_weeks: [
+        {
+          week_num: 1,
+          focus: "Wprowadzenie do biegania",
+          days: [
+            {
+              day_name: "Pon",
+              workout: "Trening wprowadzający - 20-30 minut lekkiego biegu"
+            },
+            {
+              day_name: "Śr",
+              workout: "Trening tempowy - 3-4 km w tempie konwersacyjnym"
+            },
+            {
+              day_name: "Sob",
+              workout: "Długi bieg - 5-6 km w wolnym tempie"
+            }
+          ]
+        },
+        {
+          week_num: 2,
+          focus: "Budowanie bazy",
+          days: [
+            {
+              day_name: "Pon",
+              workout: "Trening wprowadzający - 25-35 minut lekkiego biegu"
+            },
+            {
+              day_name: "Śr",
+              workout: "Trening tempowy - 4-5 km w tempie konwersacyjnym"
+            },
+            {
+              day_name: "Sob",
+              workout: "Długi bieg - 6-7 km w wolnym tempie"
+            }
+          ]
+        }
+      ],
+      corrective_exercises: {
+        frequency: "2-3 razy w tygodniu",
+        list: [
+          {
+            name: "Rozciąganie łydek",
+            description: "Stań w wykroku, tylna noga wyprostowana, przednia zgięta. Przytrzymaj 30 sekund.",
+            sets_reps: "2 serie po 30 sekund na każdą nogę"
+          },
+          {
+            name: "Wzmacnianie mięśni głębokich",
+            description: "Napnij mięśnie brzucha i utrzymaj napięcie przez 10 sekund.",
+            sets_reps: "3 serie po 10 powtórzeń"
+          }
+        ]
+      },
+      pain_monitoring: {
+        scale: "0-10",
+        rules: [
+          "Przerwij trening przy bólu powyżej 5/10",
+          "Skonsultuj się z lekarzem przy utrzymującym się bólu"
+        ]
+      },
+      notes: [
+        "Dostosuj plan do swoich możliwości",
+        "Pamiętaj o nawodnieniu",
+        "Ten plan jest planem awaryjnym i może wymagać dostosowania"
+      ]
+    };
   }
 }
 
