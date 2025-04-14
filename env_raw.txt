@@ -1,0 +1,8 @@
+﻿NODE_ENV=development
+PORT=3000
+MONGODB_URI=mongodb+srv://michalskikamil:kamilmichalski@wizzard.olubbka.mongodb.net/?retryWrites=true&w=majority&appName=wizzard
+JWT_SECRET=tajna-fraza-ktora-powinna-byc-bardzo-dluga-i-skomplikowana
+JWT_EXPIRES_IN=90d
+JWT_COOKIE_EXPIRES_IN=90
+GEMINI_API_KEY=AIzaSyAiAFwDYBYXzoFSiElLulquq19HPaDzQ-c
+TEST_MODE=true

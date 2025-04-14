@@ -248,48 +248,48 @@ ${techniqueInfo.join('\n')}` : ''}
 
 ${dietInfo.length > 0 ? `DIETA I NAWODNIENIE:
 ${dietInfo.join('\n')}` : ''}
-
-Plan powinien być w formacie JSON zgodnym z następującą strukturą:
-{
+    
+    Plan powinien być w formacie JSON zgodnym z następującą strukturą:
+    {
   "id": "running_plan_[cel]_[poziom]_[dni]_[tygodnie]",
-  "metadata": {
-    "discipline": "running",
+      "metadata": {
+        "discipline": "running",
     "target_group": "Biegacze [poziom]",
     "target_goal": "[cel]",
-    "level_hint": "[poziom]",
+        "level_hint": "[poziom]",
     "days_per_week": "[liczba dni]",
     "duration_weeks": [liczba tygodni],
-    "description": "[szczegółowy opis planu]",
+        "description": "[szczegółowy opis planu]",
     "author": "Generator RunFitting AI"
-  },
-  "plan_weeks": [
-    {
-      "week_num": [numer],
-      "focus": "[cel tygodnia]",
-      "days": [
+      },
+      "plan_weeks": [
         {
-          "day_name": "[dzień]",
+          "week_num": [numer],
+          "focus": "[cel tygodnia]",
+          "days": [
+            {
+              "day_name": "[dzień]",
           "workout": "[szczegółowy opis treningu]"
+            }
+          ]
         }
-      ]
-    }
-  ],
-  "corrective_exercises": {
-    "frequency": "[częstotliwość]",
-    "list": [
-      {
-        "name": "[nazwa]",
-        "description": "[opis]",
-        "sets_reps": "[serie i powtórzenia]"
-      }
-    ]
-  },
-  "pain_monitoring": {
-    "scale": "Używaj skali bólu 0-10 (0 = brak bólu, 10 = ból nie do zniesienia)",
-    "rules": [
-      "[zasady monitorowania bólu]"
-    ]
-  },
+      ],
+      "corrective_exercises": {
+        "frequency": "[częstotliwość]",
+        "list": [
+          {
+            "name": "[nazwa]",
+            "description": "[opis]",
+            "sets_reps": "[serie i powtórzenia]"
+          }
+        ]
+      },
+      "pain_monitoring": {
+        "scale": "Używaj skali bólu 0-10 (0 = brak bólu, 10 = ból nie do zniesienia)",
+        "rules": [
+          "[zasady monitorowania bólu]"
+        ]
+      },
   "nutrition_recommendations": {
     "general": "[ogólne zalecenia żywieniowe]",
     "pre_workout": "[zalecenia przed treningiem]",
@@ -304,12 +304,12 @@ Plan powinien być w formacie JSON zgodnym z następującą strukturą:
       "frequency": "[częstotliwość]"
     }
   ],
-  "notes": [
-    "[uwagi]"
-  ]
-}
-
-Plan powinien być:
+      "notes": [
+        "[uwagi]"
+      ]
+    }
+    
+    Plan powinien być:
 1. Bezpieczny i dostosowany do poziomu zaawansowania użytkownika.
 2. Zawierać odpowiednią progresję obciążeń.
 3. Uwzględniać historię kontuzji i ograniczenia zdrowotne (jeśli istnieją).

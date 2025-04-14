@@ -12,6 +12,21 @@ const AppError = require('../utils/app-error');
  */
 exports.authenticate = async (req, res, next) => {
   try {
+    // Obejście dla środowiska testowego - automatycznie dodaje testowego użytkownika
+    if (process.env.NODE_ENV === 'development' || process.env.TEST_MODE === 'true') {
+      const testHeaders = req.headers['x-test-mode'];
+      if (testHeaders === 'true' || process.env.TEST_MODE === 'true') {
+        // Dodanie testowego użytkownika do req.user
+        req.user = {
+          _id: "64a8c2d7f32ab12345678901",
+          name: "Użytkownik Testowy",
+          email: "test@example.com",
+          role: "user"
+        };
+        return next();
+      }
+    }
+
     // 1) Sprawdzenie czy token jest obecny w nagłówkach
     let token;
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {

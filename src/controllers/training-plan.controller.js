@@ -208,16 +208,14 @@ class TrainingPlanController {
       // Generowanie planu
       let planData;
       try {
-        // Próba wygenerowania planu przez Gemini API
-        planData = await GeminiService.generateTrainingPlan(runningForm.toObject());
+        // Próba wygenerowania planu za pomocą Gemini
+        const geminiService = new GeminiService();
+        planData = await geminiService.generateTrainingPlan(runningForm);
       } catch (error) {
-        console.error('Błąd generowania planu przez Gemini:', error);
-        // Aktualizacja statusu formularza na błąd
-        runningForm.status = 'error';
-        await runningForm.save();
-        
-        // Fallback do lokalnego generatora
-        planData = await fallbackPlanGenerator.generateFallbackPlan(runningForm.toObject());
+        console.error('Błąd Gemini:', error);
+        // Fallback - wygeneruj plan za pomocą wbudowanego generatora
+        const fallbackGenerator = new FallbackPlanGeneratorService();
+        planData = await fallbackGenerator.generateFallbackPlan(runningForm);
       }
 
       // Tworzenie nowego planu treningowego
@@ -431,6 +429,183 @@ class TrainingPlanController {
       });
     } catch (error) {
       next(error);
+    }
+  }
+
+  /**
+   * Zapisuje nowy formularz biegowy
+   * @param {Object} req - Obiekt żądania Express
+   * @param {Object} res - Obiekt odpowiedzi Express
+   * @param {Function} next - Funkcja middleware następnego kroku
+   */
+  async submitRunningForm(req, res, next) {
+    try {
+      // Tworzenie nowego formularza z danymi z żądania
+      const formData = {
+        ...req.body,
+        userId: req.user._id,
+        status: 'pending'
+      };
+
+      const runningForm = new RunningForm(formData);
+      await runningForm.save();
+
+      res.status(201).json({
+        status: 'success',
+        data: {
+          formId: runningForm._id,
+          message: 'Formularz został zapisany. Możesz teraz wygenerować plan treningowy.'
+        }
+      });
+    } catch (error) {
+      next(new AppError(`Błąd podczas zapisywania formularza: ${error.message}`, 400));
+    }
+  }
+
+  /**
+   * Pobiera wszystkie formularze biegowe użytkownika
+   * @param {Object} req - Obiekt żądania Express
+   * @param {Object} res - Obiekt odpowiedzi Express
+   * @param {Function} next - Funkcja middleware następnego kroku
+   */
+  async getUserRunningForms(req, res, next) {
+    try {
+      const forms = await RunningForm.find({ userId: req.user._id })
+        .select('firstName mainGoal experienceLevel createdAt status')
+        .sort({ createdAt: -1 });
+
+      res.status(200).json({
+        status: 'success',
+        results: forms.length,
+        data: {
+          forms
+        }
+      });
+    } catch (error) {
+      next(new AppError(`Błąd podczas pobierania formularzy: ${error.message}`, 400));
+    }
+  }
+
+  /**
+   * Pobiera szczegóły konkretnego formularza biegowego
+   * @param {Object} req - Obiekt żądania Express
+   * @param {Object} res - Obiekt odpowiedzi Express
+   * @param {Function} next - Funkcja middleware następnego kroku
+   */
+  async getRunningFormDetails(req, res, next) {
+    try {
+      const form = await RunningForm.findOne({ 
+        _id: req.params.id,
+        userId: req.user._id
+      });
+
+      if (!form) {
+        return next(new AppError('Nie znaleziono formularza o podanym ID', 404));
+      }
+
+      // Sprawdzenie, czy formularz ma już powiązany plan treningowy
+      let planId = null;
+      const plan = await TrainingPlan.findOne({ 
+        userId: req.user._id,
+        'metadata.description': { $regex: form.firstName, $options: 'i' }
+      }).sort({ createdAt: -1 });
+      
+      if (plan) {
+        planId = plan._id;
+      }
+
+      res.status(200).json({
+        status: 'success',
+        data: {
+          form,
+          planId
+        }
+      });
+    } catch (error) {
+      next(new AppError(`Błąd podczas pobierania szczegółów formularza: ${error.message}`, 400));
+    }
+  }
+
+  /**
+   * Generuje plan treningowy na podstawie formularza biegowego
+   * @param {Object} req - Obiekt żądania Express
+   * @param {Object} res - Obiekt odpowiedzi Express
+   * @param {Function} next - Funkcja middleware następnego kroku
+   */
+  async generatePlanFromForm(req, res, next) {
+    try {
+      // Znajdź formularz po ID i sprawdź, czy należy do zalogowanego użytkownika
+      const runningForm = await RunningForm.findOne({
+        _id: req.params.id,
+        userId: req.user._id
+      });
+
+      if (!runningForm) {
+        throw new AppError('Nie znaleziono formularza', 404);
+      }
+      
+      if (runningForm.status === 'processed') {
+        throw new AppError('Ten formularz został już przetworzony', 400);
+      }
+
+      // Generowanie planu
+      let planData;
+      try {
+        // Próba wygenerowania planu za pomocą Gemini
+        const geminiService = new GeminiService();
+        planData = await geminiService.generateTrainingPlan(runningForm.toObject());
+      } catch (error) {
+        console.error('Błąd Gemini:', error);
+        // Fallback - wygeneruj plan za pomocą wbudowanego generatora
+        const fallbackGenerator = new FallbackPlanGeneratorService();
+        planData = await fallbackGenerator.generateFallbackPlan(runningForm.toObject());
+      }
+
+      // Tworzenie unikalnego ID planu
+      const uniqueId = `plan_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+      // Zapisz wygenerowany plan
+      const trainingPlan = new TrainingPlan({
+        id: uniqueId,
+        metadata: {
+          discipline: 'running',
+          target_group: runningForm.experienceLevel,
+          target_goal: runningForm.mainGoal,
+          level_hint: runningForm.experienceLevel,
+          days_per_week: runningForm.trainingDaysPerWeek.toString(),
+          duration_weeks: planData.duration_weeks || 8,
+          description: planData.description || `Plan treningowy dla ${runningForm.firstName}`,
+          author: 'RunFitting AI'
+        },
+        plan_weeks: planData.plan_weeks || [],
+        corrective_exercises: planData.corrective_exercises || {
+          frequency: 'Wykonuj 2-3 razy w tygodniu',
+          list: []
+        },
+        pain_monitoring: planData.pain_monitoring || {
+          scale: '0-10',
+          rules: ['Przerwij trening przy bólu powyżej 5/10', 'Skonsultuj się z lekarzem przy utrzymującym się bólu']
+        },
+        notes: planData.notes || ['Dostosuj plan do swoich możliwości', 'Pamiętaj o nawodnieniu'],
+        userId: req.user._id,
+        isActive: true
+      });
+
+      await trainingPlan.save();
+
+      // Zaktualizuj status formularza
+      runningForm.status = 'processed';
+      await runningForm.save();
+
+      res.status(201).json({
+        status: 'success',
+        data: {
+          planId: trainingPlan._id,
+          message: 'Plan treningowy został wygenerowany pomyślnie'
+        }
+      });
+    } catch (error) {
+      next(new AppError(`Błąd podczas generowania planu: ${error.message}`, error.statusCode || 400));
     }
   }
 }

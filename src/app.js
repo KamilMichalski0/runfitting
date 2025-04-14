@@ -16,6 +16,7 @@ const compression = require('compression');
 // const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
 const planRoutes = require('./routes/plan.routes');
+const runningFormRoutes = require('./routes/running-form.routes');
 // const exerciseRoutes = require('./routes/exercise.routes');
 
 // Importowanie middleware obsługi błędów
@@ -23,7 +24,7 @@ const globalErrorHandler = require('./middleware/error.middleware');
 const AppError = require('./utils/app-error');
 
 // Konfiguracja środowiska
-dotenv.config();
+// dotenv.config();
 
 // Inicjalizacja aplikacji Express
 const app = express();
@@ -96,6 +97,7 @@ app.get('/', (req, res) => {
 // Montowanie routerów
 app.use('/api/users', userRoutes);
 app.use('/api/plans', planRoutes);
+app.use('/api/running-forms', runningFormRoutes);
 
 // Obsługa błędnych ścieżek
 app.all('*', (req, res, next) => {
@@ -106,9 +108,14 @@ app.all('*', (req, res, next) => {
 app.use(globalErrorHandler);
 
 // Połączenie z bazą danych MongoDB
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Połączono z bazą danych MongoDB'))
-  .catch(err => console.error('Błąd połączenia z bazą danych:', err));
+  .catch(err => {
+    console.error('Błąd połączenia z bazą danych:');
+    console.error('Treść błędu:', err.message);
+    console.error('MONGODB_URI załadowany:', !!process.env.MONGODB_URI);
+    process.exit(1); // Zatrzymaj aplikację jeśli nie można połączyć się z bazą
+  });
 
 // Konfiguracja portu i uruchomienie serwera
 const PORT = process.env.PORT || 3000;

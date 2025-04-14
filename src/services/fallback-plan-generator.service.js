@@ -786,7 +786,7 @@ class FallbackPlanGeneratorService {
               }
             );
           } else if (injury.type === 'achilles_issues') {
-            preventiveExercises.push(
+          preventiveExercises.push(
               { 
                 name: "Excentric heel drops", 
                 description: "Stojąc na krawędzi stopnia, unieś się na palcach, a następnie powoli opuść pięty poniżej poziomu stopnia.", 
@@ -799,7 +799,7 @@ class FallbackPlanGeneratorService {
               }
             );
           } else if (injury.type === 'plantar_fasciitis') {
-            preventiveExercises.push(
+          preventiveExercises.push(
               { 
                 name: "Rolowanie stopy", 
                 description: "Roluj stopę na piłce tenisowej lub specjalnym wałku przez 2-3 minuty.", 
