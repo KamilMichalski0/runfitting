@@ -1,0 +1,38 @@
+sequenceDiagram
+    actor User as Użytkownik
+    participant FE as Frontend
+    participant API as API Backend
+    participant Auth as Middleware Auth
+    participant PlanCtrl as Plan Controller
+    participant PlanSvc as Plan Service
+    participant Algo as Algorytmy Treningowe
+    participant DB as Baza Danych
+
+    User->>FE: Wypełnia formularz treningowy
+    FE->>API: POST /api/plans
+    API->>Auth: Weryfikacja tokenu JWT
+    Auth->>PlanCtrl: Przekazanie żądania
+    PlanCtrl->>PlanSvc: Tworzenie planu treningowego
+    PlanSvc->>DB: Pobieranie danych użytkownika
+    DB-->>PlanSvc: Zwracanie danych użytkownika
+    PlanSvc->>Algo: Obliczanie parametrów treningowych
+    Note over Algo: Obliczanie stref tętna, <br/>szacowanie tempa,<br/>wybór szablonu planu
+    Algo-->>PlanSvc: Zwracanie obliczonych parametrów
+    PlanSvc->>Algo: Generowanie planu treningowego
+    Note over Algo: Wybór szablonu,<br/>dostosowanie objętości,<br/>wybór ćwiczeń wspomagających
+    Algo-->>PlanSvc: Zwracanie planu treningowego
+    PlanSvc->>DB: Zapisywanie planu
+    DB-->>PlanSvc: Potwierdzenie zapisu
+    PlanSvc-->>PlanCtrl: Zwracanie ID nowego planu
+    PlanCtrl-->>API: Odpowiedź 201 Created z ID planu
+    API-->>FE: Przekazanie odpowiedzi
+    FE->>API: GET /api/plans/:id
+    API->>Auth: Weryfikacja tokenu JWT
+    Auth->>PlanCtrl: Przekazanie żądania
+    PlanCtrl->>PlanSvc: Pobieranie szczegółów planu
+    PlanSvc->>DB: Zapytanie o plan
+    DB-->>PlanSvc: Zwracanie planu
+    PlanSvc-->>PlanCtrl: Zwracanie planu z detalami
+    PlanCtrl-->>API: Odpowiedź 200 OK z planem
+    API-->>FE: Przekazanie odpowiedzi
+    FE-->>User: Wyświetlenie planu treningowego

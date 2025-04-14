@@ -1,0 +1,75 @@
+# Zależności
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Środowisko
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# Logi
+logs/
+*.log
+
+# Katalogi systemowe
+.DS_Store
+Thumbs.db
+
+# Katalogi IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Katalogi build
+dist/
+build/
+out/
+
+# Katalogi cache
+.cache/
+.npm/
+.eslintcache
+
+# Katalogi testowe
+coverage/
+
+# Katalogi tymczasowe
+tmp/
+temp/
+
+# Pliki konfiguracyjne specyficzne dla projektu
+config/local.js
+config/development.js
+config/test.js
+
+# Pliki MongoDB
+*.mongodb
+*.mongo
+
+# Pliki dokumentacji
+docs/_build/
+docs/_static/
+
+# Pliki uploadów
+uploads/
+public/uploads/
+
+# Pliki sesji
+*.session
+*.session.*
+
+# Pliki dumpów
+*.dump
+*.dump.*
+
+# Pliki backupów
+*.bak
+*.backup 

@@ -1,0 +1,48 @@
+graph TD
+    classDef middleware fill:#f9d77e,stroke:#333,stroke-width:1px
+    classDef model fill:#a8d1df,stroke:#333,stroke-width:1px
+    classDef controller fill:#f8b195,stroke:#333,stroke-width:1px
+    classDef service fill:#c06c84,stroke:#333,stroke-width:1px
+    classDef algorithm fill:#6c5b7b,stroke:#333,color:#fff,stroke-width:1px
+    classDef util fill:#b8b8ff,stroke:#333,stroke-width:1px
+    
+    Client[Client/Frontend] --> API[API Endpoints]
+    
+    subgraph Backend
+        API --> Auth[Authentykacja]
+        API --> Validation[Walidacja]
+        
+        Auth --> UserController[Kontroler Użytkownika]
+        Auth --> PlanController[Kontroler Planów]
+        Auth --> ExerciseController[Kontroler Ćwiczeń]
+        
+        Validation --> UserController
+        Validation --> PlanController
+        Validation --> ExerciseController
+        
+        UserController --> UserService[Serwis Użytkownika]
+        PlanController --> PlanService[Serwis Planów]
+        ExerciseController --> ExerciseService[Serwis Ćwiczeń]
+        
+        UserService --> UserModel[Model Użytkownika]
+        PlanService --> PlanModel[Model Planu]
+        PlanService --> TrainingAlgorithms[Algorytmy Treningowe]
+        ExerciseService --> ExerciseModel[Model Ćwiczeń]
+        
+        TrainingAlgorithms --> HeartRateCalculator[Kalkulator Stref Tętna]
+        TrainingAlgorithms --> PaceCalculator[Kalkulator Temp]
+        TrainingAlgorithms --> PlanGenerator[Generator Planów]
+        
+        PlanGenerator --> PlanTemplates[Szablony Planów]
+        
+        UserModel --> Database[(MongoDB)]
+        PlanModel --> Database
+        ExerciseModel --> Database
+    end
+    
+    class Auth,Validation middleware
+    class UserModel,PlanModel,ExerciseModel model
+    class UserController,PlanController,ExerciseController controller
+    class UserService,PlanService,ExerciseService service
+    class HeartRateCalculator,PaceCalculator,PlanGenerator algorithm
+    class PlanTemplates util
