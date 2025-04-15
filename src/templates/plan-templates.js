@@ -304,7 +304,7 @@ module.exports = {
       "KLUCZOWA ZASADA: Monitoruj ból! Używaj skali 0-10. Ból podczas aktywności/ćwiczeń nie powinien przekraczać 3-4/10. Ból następnego dnia rano nie powinien być wyższy niż przed aktywnością. Jeśli ból się nasila, zmniejsz intensywność/czas trwania, zrób dodatkowy dzień przerwy lub wróć do ćwiczeń/aktywności z poprzedniego etapu.",
       "DOZWOLONE: Marsz po płaskim, miękkim terenie (jeśli bezbolesny), jazda na rowerze stacjonarnym (z niskim oporem), pływanie (bez mocnej pracy nóg stylem klasycznym - 'żabką'), ćwiczenia korekcyjne wg planu (bezbolesne).",
       "PRZECIWWSKAZANE: Bieganie, skakanie, podskoki, sprinty, chodzenie/stanie na palcach, agresywny stretching Achillesa/łydek (szczególnie jeśli prowokuje ból), wszelkie aktywności, które wywołują ból > 4/10 lub zwiększają ból następnego dnia.",
-      "ELASTYCZNOŚĆ: Plan jest ramowy. Dostosuj dni 'treningowe' (lekkiej aktywności) do samopoczucia i reakcji bólowej. Ćwiczenia korekcyjne wykonuj najlepiej codziennie lub minimum 5 razy w tygodniu.",
+      "ĆWICZENIA KOREKCYJNE: Wykonuj ćwiczenia korekcyjne codziennie lub minimum 5 razy w tygodniu dla najlepszych efektów.",
       "KONSULTACJA: Jeśli ból nie zmniejsza się po 2-4 tygodniach stosowania planu, nasila się lub pojawiają się nowe objawy, skonsultuj się z fizjoterapeutą lub lekarzem."
     ]
   },
@@ -380,7 +380,7 @@ module.exports = {
       "KLUCZOWA ZASADA: Monitoruj ból! Używaj skali 0-10. Ból podczas aktywności/ćwiczeń nie powinien przekraczać 3-4/10. Ból następnego dnia rano nie powinien być wyższy niż przed aktywnością. Jeśli ból się nasila, zmniejsz intensywność/czas trwania, zrób dodatkowy dzień przerwy lub wróć do ćwiczeń/aktywności z poprzedniego etapu.",
       "DOZWOLONE: Marsz po płaskim, miękkim terenie (jeśli bezbolesny), jazda na rowerze stacjonarnym (z niskim oporem), pływanie (bez mocnej pracy nóg stylem klasycznym - 'żabką'), ćwiczenia korekcyjne wg planu (bezbolesne).",
       "PRZECIWWSKAZANE: Bieganie, skakanie, podskoki, sprinty, chodzenie/stanie na palcach, agresywny stretching Achillesa/łydek (szczególnie jeśli prowokuje ból), wszelkie aktywności, które wywołują ból > 4/10 lub zwiększają ból następnego dnia.",
-      "ELASTYCZNOŚĆ: Plan jest ramowy. Dostosuj dni 'treningowe' (lekkiej aktywności) do samopoczucia i reakcji bólowej. Ćwiczenia korekcyjne wykonuj najlepiej codziennie lub minimum 5 razy w tygodniu.",
+      "ĆWICZENIA KOREKCYJNE: Wykonuj ćwiczenia korekcyjne codziennie lub minimum 5 razy w tygodniu dla najlepszych efektów.",
       "KONSULTACJA: Jeśli ból nie zmniejsza się po 2-4 tygodniach stosowania planu, nasila się lub pojawiają się nowe objawy, skonsultuj się z fizjoterapeutą lub lekarzem."
     ]
   }
