@@ -1,6 +1,7 @@
 const axios = require('axios');
 const config = require('../config/gemini.config');
 const AppError = require('../utils/app-error');
+const { getExamplePlanTemplate } = require('../templates/plan-template-selector');
 
 class GeminiService {
   constructor() {
@@ -22,12 +23,19 @@ class GeminiService {
    */
   async generateTrainingPlan(userData) {
     try {
+      console.log('\n=== ROZPOCZĘCIE GENEROWANIA PLANU TRENINGOWEGO ===');
+      console.log('1. Dane wejściowe użytkownika:', JSON.stringify(userData, null, 2));
+
+      console.log('\n2. Tworzenie promptu...');
       const prompt = this._createPrompt(userData);
+      console.log('Wygenerowany prompt:', prompt);
       
       // Wywołanie API zgodnie z najnowszą dokumentacją Gemini dla modelu 2.5
       const url = `/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
       
-      console.log(`Wysyłanie zapytania do Gemini API, model: ${this.model}`);
+      console.log('\n3. Konfiguracja żądania do Gemini API:');
+      console.log(`- Model: ${this.model}`);
+      console.log(`- URL: ${this.apiUrl}${url}`);
       
       // Poprawiona struktura żądania zgodnie z dokumentacją Gemini 2.5
       const requestBody = {
@@ -68,17 +76,40 @@ class GeminiService {
         ]
       };
       
-      console.log('Strukturę żądania:', JSON.stringify(requestBody, null, 2).substring(0, 500) + '...');
+      console.log('\n4. Konfiguracja generowania:');
+      console.log('- Temperature:', config.temperature);
+      console.log('- TopK:', config.topK);
+      console.log('- TopP:', config.topP);
+      console.log('- MaxTokens:', config.maxTokens);
+      
+      console.log('\n5. Wysyłanie żądania do API...');
+      console.log('Request body:', JSON.stringify(requestBody, null, 2));
       
       const response = await this.axiosClient.post(url, requestBody);
 
-      console.log(`Otrzymano odpowiedź z Gemini API, status: ${response.status}`);
-      console.log(`Pełna struktura odpowiedzi:`, JSON.stringify(response.data, null, 2));
+      console.log('\n6. Otrzymano odpowiedź z API:');
+      console.log(`- Status: ${response.status}`);
+      console.log('- Headers:', JSON.stringify(response.headers, null, 2));
+      console.log('- Pełna odpowiedź:', JSON.stringify(response.data, null, 2));
       
-      return this._parseResponse(response.data);
+      console.log('\n7. Parsowanie odpowiedzi...');
+      const parsedPlan = this._parseResponse(response.data);
+      
+      console.log('\n8. Plan po sparsowaniu:');
+      console.log('- ID planu:', parsedPlan.id);
+      console.log('- Liczba tygodni:', parsedPlan.plan_weeks.length);
+      console.log('- Metadane:', JSON.stringify(parsedPlan.metadata, null, 2));
+      console.log('- Przykładowy tydzień:', JSON.stringify(parsedPlan.plan_weeks[0], null, 2));
+      
+      console.log('\n=== ZAKOŃCZONO GENEROWANIE PLANU TRENINGOWEGO ===\n');
+      
+      return parsedPlan;
     } catch (error) {
-      console.error('Błąd podczas generowania planu przez Gemini:', error.response?.data || error.message);
-      throw new AppError('Nie udało się wygenerować planu treningowego', 500);
+      console.error('\n!!! BŁĄD PODCZAS GENEROWANIA PLANU !!!');
+      console.error('Szczegóły błędu:', error);
+      console.error('Response data:', error.response?.data);
+      console.error('Stack trace:', error.stack);
+      throw new AppError('Nie udało się wygenerować planu treningowego: ' + (error.response?.data?.error?.message || error.message), 500);
     }
   }
 
@@ -112,263 +143,121 @@ class GeminiService {
     
     const levelInfo = `Poziom zaawansowania: ${levelMap[userData.experienceLevel] || userData.experienceLevel}`;
     const goalInfo = `Główny cel: ${goalMap[userData.mainGoal] || userData.mainGoal}`;
-    const weeklyDistanceInfo = `Kilometraż tygodniowy: ${userData.weeklyKilometers} km`;
-    const trainingDaysInfo = `Dni treningowe w tygodniu: ${userData.trainingDaysPerWeek}`;
     
-    // Sekcja II - Parametry fizjologiczne (opcjonalnie)
-    let physiologicalParams = [];
+    // Sekcja II - Preferencje treningowe
+    const daysPerWeekInfo = `Preferowana liczba dni treningowych w tygodniu: ${userData.daysPerWeek}`;
+    const preferredDaysInfo = userData.preferredDays && userData.preferredDays.length > 0 
+      ? `Preferowane dni tygodnia: ${userData.preferredDays.join(', ')}`
+      : 'Brak preferencji co do dni tygodnia';
     
-    if (userData.hasCooperTestResult && userData.cooperTestDistance) {
-      physiologicalParams.push(`Wynik testu Coopera: ${userData.cooperTestDistance} metrów`);
-    }
+    const maxTimeInfo = userData.maxTimePerSession 
+      ? `Maksymalny czas na sesję treningową: ${userData.maxTimePerSession} minut`
+      : 'Brak określonego limitu czasu na sesję treningową';
     
-    if (userData.personalBests) {
-      const pbs = userData.personalBests;
+    // Sekcja III - Informacje o kontuzjach i ograniczeniach
+    let injuriesInfo = 'Brak kontuzji i ograniczeń';
+    if (userData.injuries && userData.injuries.length > 0) {
+      injuriesInfo = `Kontuzje/ograniczenia: ${userData.injuries.join(', ')}`;
       
-      if (pbs.fiveKm && pbs.fiveKm.minutes !== undefined) {
-        physiologicalParams.push(`Rekord 5km: ${pbs.fiveKm.minutes}:${String(pbs.fiveKm.seconds || 0).padStart(2, '0')}`);
+      if (userData.injuryDetails) {
+        injuriesInfo += `\nSzczegóły kontuzji: ${userData.injuryDetails}`;
       }
       
-      if (pbs.tenKm && pbs.tenKm.minutes !== undefined) {
-        const hours = pbs.tenKm.hours || 0;
-        physiologicalParams.push(
-          `Rekord 10km: ${hours > 0 ? hours + ':' : ''}${String(pbs.tenKm.minutes).padStart(2, '0')}:${String(pbs.tenKm.seconds || 0).padStart(2, '0')}`
-        );
-      }
-      
-      if (pbs.halfMarathon && pbs.halfMarathon.hours !== undefined) {
-        physiologicalParams.push(
-          `Rekord półmaraton: ${pbs.halfMarathon.hours}:${String(pbs.halfMarathon.minutes || 0).padStart(2, '0')}:${String(pbs.halfMarathon.seconds || 0).padStart(2, '0')}`
-        );
-      }
-      
-      if (pbs.marathon && pbs.marathon.hours !== undefined) {
-        physiologicalParams.push(
-          `Rekord maraton: ${pbs.marathon.hours}:${String(pbs.marathon.minutes || 0).padStart(2, '0')}:${String(pbs.marathon.seconds || 0).padStart(2, '0')}`
-        );
+      if (userData.painLevel) {
+        injuriesInfo += `\nPoziom bólu (0-10): ${userData.painLevel}`;
       }
     }
     
-    if (userData.vo2max && userData.vo2max.known && userData.vo2max.value) {
-      physiologicalParams.push(`VO2max: ${userData.vo2max.value} ml/kg/min`);
-    }
-    
-    if (userData.maxHeartRate && (userData.maxHeartRate.measured || userData.maxHeartRate.estimated) && userData.maxHeartRate.value) {
-      physiologicalParams.push(`Tętno maksymalne: ${userData.maxHeartRate.value} uderzeń/min (${userData.maxHeartRate.measured ? 'zmierzone' : 'szacowane'})`);
-    }
-    
-    if (userData.restingHeartRate && userData.restingHeartRate.known && userData.restingHeartRate.value) {
-      physiologicalParams.push(`Tętno spoczynkowe: ${userData.restingHeartRate.value} uderzeń/min`);
-    }
-    
-    // Sekcja III - Historia kontuzji i ograniczenia
-    let injuryHistory = [];
-    
-    if (userData.hasInjuries) {
-      injuryHistory.push('Użytkownik zgłasza problemy zdrowotne/kontuzje.');
-      
-      if (userData.currentPain && userData.currentPain.exists) {
-        injuryHistory.push(`Aktualny ból: Lokalizacja - ${userData.currentPain.location}, Opis - ${userData.currentPain.description}, Intensywność - ${userData.currentPain.intensity}/10, Okoliczności - ${userData.currentPain.circumstances}`);
-      }
-      
-      if (userData.recentInjury && userData.recentInjury.exists) {
-        const injuryDate = userData.recentInjury.date ? new Date(userData.recentInjury.date).toLocaleDateString('pl-PL') : 'data nieznana';
-        injuryHistory.push(`Niedawna kontuzja/operacja: ${userData.recentInjury.type}, Data: ${injuryDate}, Status rehabilitacji: ${userData.recentInjury.rehabilitationStatus}`);
-      }
-      
-      if (userData.pastInjuries && userData.pastInjuries.length > 0) {
-        const pastInjuriesList = userData.pastInjuries.map(injury => 
-          `${injury.type}${injury.details ? ` (${injury.details})` : ''}`
-        ).join(', ');
-        
-        injuryHistory.push(`Historia kontuzji: ${pastInjuriesList}`);
-      }
-      
-      if (userData.medicalConditions && userData.medicalConditions.length > 0) {
-        const conditionsList = userData.medicalConditions
-          .filter(condition => condition.type !== 'none')
-          .map(condition => 
-            `${condition.type}${condition.details ? ` (${condition.details})` : ''}`
-          ).join(', ');
-        
-        if (conditionsList) {
-          injuryHistory.push(`Schorzenia i problemy zdrowotne: ${conditionsList}`);
-        }
-      }
-    } else {
-      injuryHistory.push('Użytkownik nie zgłasza problemów zdrowotnych/kontuzji.');
-    }
-    
-    // Sekcja IV - Technika biegu
-    let techniqueInfo = [];
-    
-    if (userData.runningTechniqueGoals && userData.runningTechniqueGoals.length > 0) {
-      const techniqueGoals = userData.runningTechniqueGoals
-        .filter(goal => goal.type !== 'none')
-        .map(goal => 
-          `${goal.type}${goal.details ? ` (${goal.details})` : ''}`
-        ).join(', ');
-      
-      if (techniqueGoals) {
-        techniqueInfo.push(`Cele dotyczące techniki biegowej: ${techniqueGoals}`);
-      }
-    } else {
-      techniqueInfo.push('Brak konkretnych celów dotyczących techniki biegowej.');
-    }
-    
-    // Sekcja V - Dieta i nawodnienie
-    let dietInfo = [];
-    
-    if (userData.dietGoals && userData.dietGoals.length > 0) {
-      const goals = userData.dietGoals
-        .filter(goal => goal.type !== 'none')
-        .map(goal => goal.type).join(', ');
-      
-      if (goals) {
-        dietInfo.push(`Cele żywieniowe: ${goals}`);
-      }
-    }
-    
-    if (userData.dietaryRestrictions && userData.dietaryRestrictions.length > 0) {
-      const restrictions = userData.dietaryRestrictions
-        .filter(restriction => restriction.type !== 'none')
-        .map(restriction => 
-          `${restriction.type}${restriction.details ? ` (${restriction.details})` : ''}`
-        ).join(', ');
-      
-      if (restrictions) {
-        dietInfo.push(`Ograniczenia żywieniowe: ${restrictions}`);
-      }
-    }
-    
-    if (userData.giIssuesFrequency && userData.giIssuesFrequency !== 'rarely') {
-      dietInfo.push(`Problemy żołądkowo-jelitowe: ${userData.giIssuesFrequency}${userData.giIssuesTriggers ? ` (Możliwe przyczyny: ${userData.giIssuesTriggers})` : ''}`);
-    }
-    
-    if (userData.typicalTrainingWeek) {
-      dietInfo.push(`Typowy tydzień treningowy: ${userData.typicalTrainingWeek}`);
-    }
-    
-    if (userData.nutritionHabits) {
-      const habits = userData.nutritionHabits;
-      if (habits.preworkout) dietInfo.push(`Odżywianie przed treningiem: ${habits.preworkout}`);
-      if (habits.duringWorkout) dietInfo.push(`Odżywianie podczas treningu: ${habits.duringWorkout}`);
-      if (habits.postWorkout) dietInfo.push(`Odżywianie po treningu: ${habits.postWorkout}`);
-      if (habits.testedProducts) dietInfo.push(`Sprawdzone/niesprawdzone produkty: ${habits.testedProducts}`);
-    }
-    
-    if (userData.hydrationHabits) {
-      dietInfo.push(`Nawyki nawodnienia: ${userData.hydrationHabits}`);
-    }
-    
-    // Formatowanie całości
-    return `Wygeneruj kompleksowy plan biegowy dla użytkownika na podstawie poniższych danych:
+    // Sekcja IV - Dodatkowe informacje
+    const additionalInfo = userData.additionalInfo 
+      ? `Dodatkowe informacje: ${userData.additionalInfo}`
+      : 'Brak dodatkowych informacji';
 
-DANE PODSTAWOWE:
+    // Pobierz przykładowy szablon planu pasujący do danych użytkownika
+    const examplePlan = getExamplePlanTemplate(userData);
+    const examplePlanJson = JSON.stringify(examplePlan, null, 2);
+
+    return `Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Stwórz spersonalizowany plan treningowy na podstawie poniższych informacji o użytkowniku.
+
+### DANE UŻYTKOWNIKA:
 ${ageInfo}
-
-INFORMACJE BIEGOWE:
 ${levelInfo}
 ${goalInfo}
-${weeklyDistanceInfo}
-${trainingDaysInfo}
+${daysPerWeekInfo}
+${preferredDaysInfo}
+${maxTimeInfo}
+${injuriesInfo}
+${additionalInfo}
 
-${physiologicalParams.length > 0 ? `PARAMETRY FIZJOLOGICZNE:
-${physiologicalParams.join('\n')}` : ''}
+### WYMAGANA STRUKTURA ODPOWIEDZI:
+Plan musi być zwrócony w następującym formacie JSON.
 
-HISTORIA KONTUZJI I OGRANICZENIA:
-${injuryHistory.join('\n')}
+### PRZYKŁAD PLANU:
+${examplePlanJson}
 
-${techniqueInfo.length > 0 ? `TECHNIKA BIEGU:
-${techniqueInfo.join('\n')}` : ''}
-
-${dietInfo.length > 0 ? `DIETA I NAWODNIENIE:
-${dietInfo.join('\n')}` : ''}
-    
-WAŻNE: Musisz zwrócić prawidłowy obiekt JSON z niepustą tablicą plan_weeks. Każdy tydzień musi mieć week_num i tablicę days.
-
-Plan powinien być w formacie JSON dokładnie zgodnym z następującą strukturą:
+### SCHEMAT JSON:
 {
-  "id": "running_plan_[cel]_[poziom]_[dni]_[tygodnie]",
+  "id": string (unikalny identyfikator),
   "metadata": {
     "discipline": "running",
-    "target_group": "Biegacze [poziom]",
-    "target_goal": "[cel]",
-    "level_hint": "[poziom]",
-    "days_per_week": "[liczba dni]",
-    "duration_weeks": [liczba tygodni],
-    "description": "[szczegółowy opis planu]",
-    "author": "RunFitting AI"
+    "target_group": string,
+    "target_goal": string,
+    "level_hint": string,
+    "days_per_week": string,
+    "duration_weeks": number,
+    "description": string,
+    "author": string
   },
   "plan_weeks": [
     {
-      "week_num": 1,
-      "focus": "Adaptacja",
+      "week_num": number,
+      "focus": string,
       "days": [
         {
-          "day_name": "Pon",
-          "workout": "Trening wprowadzający - 20-30 minut lekkiego biegu"
-        },
-        {
-          "day_name": "Śr",
-          "workout": "Trening tempowy - 3-4 km w tempie konwersacyjnym"
-        },
-        {
-          "day_name": "Sob",
-          "workout": "Długi bieg - 5-6 km w wolnym tempie"
-        }
-      ]
-    },
-    {
-      "week_num": 2,
-      "focus": "Budowanie bazy",
-      "days": [
-        {
-          "day_name": "Pon",
-          "workout": "Trening wprowadzający - 25-35 minut lekkiego biegu"
-        },
-        {
-          "day_name": "Śr",
-          "workout": "Trening tempowy - 4-5 km w tempie konwersacyjnym"
-        },
-        {
-          "day_name": "Sob",
-          "workout": "Długi bieg - 6-7 km w wolnym tempie"
+          "day_name": string (WAŻNE: użyj DOKŁADNIE jednej z wartości: "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"),
+          "workout": {
+            "type": string,
+            "description": string,
+            "distance": number lub null,
+            "duration": number,
+            "target_pace": {
+              "min_per_km": number,
+              "sec_per_km": number
+            } lub null,
+            "target_heart_rate": {
+              "min": number lub null,
+              "max": number lub null,
+              "zone": string
+            },
+            "support_exercises": [
+              {
+                "name": string,
+                "sets": number,
+                "reps": number lub null,
+                "duration": number lub null
+              }
+            ]
+          }
         }
       ]
     }
-  ],
-  "corrective_exercises": {
-    "frequency": "[częstotliwość]",
-    "list": [
-      {
-        "name": "[nazwa]",
-        "description": "[opis]",
-        "sets_reps": "[serie i powtórzenia]"
-      }
-    ]
-  },
-  "pain_monitoring": {
-    "scale": "0-10",
-    "rules": [
-      "[zasady monitorowania bólu]"
-    ]
-  },
-  "notes": [
-    "[uwagi]"
   ]
 }
-    
-Plan powinien być:
-1. Bezpieczny i dostosowany do poziomu zaawansowania użytkownika.
-2. Zawierać odpowiednią progresję obciążeń.
-3. Uwzględniać historię kontuzji i ograniczenia zdrowotne (jeśli istnieją).
-4. Zawierać konkretne zalecenia treningowe, w tym tempo, dystans, i typ treningu.
-5. Uwzględniać odpowiednią rozgrzewkę i schłodzenie.
-6. Zawierać konkretne ćwiczenia wspomagające specyficzne dla potrzeb użytkownika.
-7. Być realistyczny i możliwy do zrealizowania.
 
-PAMIĘTAJ: Zwróć tylko prawidłowy obiekt JSON zgodny z powyższą strukturą. Nie dodawaj żadnego tekstu przed lub po obiekcie JSON.`;
+KRYTYCZNE WYMAGANIA:
+1. Pole day_name MUSI zawierać DOKŁADNIE jedną z wartości: "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"
+2. Nie używaj skrótów ani innych formatów nazw dni
+3. Zachowaj dokładnie podaną strukturę JSON dla pola workout
+4. Wszystkie pola numeryczne muszą być liczbami, nie stringami
+5. Użyj null dla opcjonalnych wartości numerycznych, które nie są określone
+6. Plan musi być dostosowany do poziomu zaawansowania, celu i ograniczeń użytkownika
+7. Plan musi być realistyczny i uwzględniać stopniowy progres
+8. Jeśli użytkownik ma kontuzje, dostosuj plan tak, aby minimalizować ryzyko pogłębienia problemu
+9. Uwzględnij dni odpoczynku i regeneracji
+10. Dodaj wskazówki dotyczące monitorowania bólu, jeśli użytkownik zgłasza kontuzje
+11. Uwzględnij ćwiczenia korekcyjne/uzupełniające, jeśli są potrzebne
+
+WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON.`;
   }
 
   /**
@@ -378,109 +267,37 @@ PAMIĘTAJ: Zwróć tylko prawidłowy obiekt JSON zgodny z powyższą strukturą.
    */
   _parseResponse(response) {
     try {
-      console.log('Struktura odpowiedzi API:', JSON.stringify(Object.keys(response), null, 2));
-      console.log('Pełna odpowiedź API (pierwsze 1000 znaków):', JSON.stringify(response).substring(0, 1000));
-      
-      // Sprawdzanie, czy odpowiedź zawiera informację o błędzie lub blokadzie
-      if (response.error) {
-        console.error('API zwróciło błąd:', response.error);
-        throw new Error(`Błąd API Gemini: ${response.error.message || 'Nieznany błąd'}`);
-      }
-      
-      if (response.promptFeedback && response.promptFeedback.blockReason) {
-        console.error('Zapytanie zostało zablokowane:', response.promptFeedback.blockReason);
-        throw new Error(`Zapytanie zablokowane: ${response.promptFeedback.blockReason}`);
-      }
-      
-      // Sprawdzanie powodu zakończenia generowania
-      if (response.candidates && response.candidates[0] && response.candidates[0].finishReason) {
-        const finishReason = response.candidates[0].finishReason;
-        console.log(`Powód zakończenia generowania: ${finishReason}`);
-        
-        if (finishReason === 'SAFETY' || finishReason === 'RECITATION' || finishReason === 'BLOCKED') {
-          throw new Error(`Generowanie zostało przerwane z powodu: ${finishReason}`);
-        }
-      }
-      
-      let content;
-      
-      // Obsługa różnych formatów odpowiedzi API Gemini
-      if (response.candidates && response.candidates[0] && response.candidates[0].content) {
-        console.log('Używam formatu candidates[0].content');
-        content = response.candidates[0].content.parts[0].text;
-      } else if (response.content && response.content.parts && response.content.parts[0]) {
-        console.log('Używam formatu content.parts[0]');
-        content = response.content.parts[0].text;
-      } else if (response.text) {
-        console.log('Używam formatu text');
-        content = response.text;
-      } else if (response.candidates && response.candidates[0] && response.candidates[0].text) {
-        console.log('Używam formatu candidates[0].text');
-        content = response.candidates[0].text;
-      } else if (response.generations && response.generations[0]) {
-        console.log('Używam formatu generations[0]');
-        content = response.generations[0].text || response.generations[0].content;
-      } else if (response.choices && response.choices[0]) {
-        console.log('Używam formatu choices[0]');
-        content = response.choices[0].text || response.choices[0].message?.content;
-      } else if (response.result) {
-        console.log('Używam formatu result');
-        content = response.result;
-      } else if (response.promptFeedback && response.promptFeedback.safetyRatings) {
-        console.log('Otrzymano blokadę bezpieczeństwa od API');
-        throw new Error('Zapytanie zostało zablokowane przez filtry bezpieczeństwa Gemini API');
-      } else if (response.usageMetadata && response.modelVersion) {
-        // Format specyficzny dla tego modelu Gemini 2.5 - brak odpowiedzi
-        console.log('Otrzymano tylko metadane bez treści odpowiedzi');
-        
-        // Tworzymy domyślny plan treningowy
-        return this._createDefaultTrainingPlan();
-      } else {
-        console.error('Nieznany format odpowiedzi API:', response);
-        throw new Error('Nieobsługiwany format odpowiedzi API');
-      }
-      
-      if (!content) {
-        console.error('Nie znaleziono treści w odpowiedzi API:', response);
-        throw new Error('Pusta odpowiedź z API - brak treści');
-      }
-      
-      console.log('Odpowiedź z Gemini API (surowa):', content.substring(0, 500) + '...');
-      
+      // Próba wyodrębnienia JSON z odpowiedzi
       let plan;
       try {
-        plan = JSON.parse(content);
-        console.log('Plan po parsowaniu:', JSON.stringify({
-          id: plan.id,
-          hasMetadata: !!plan.metadata,
-          hasPlanWeeks: !!plan.plan_weeks,
-          planWeeksLength: plan.plan_weeks ? plan.plan_weeks.length : 0,
-          metadata: plan.metadata
-        }, null, 2));
-        
-      } catch (jsonError) {
-        console.error('Błąd parsowania JSON:', jsonError);
-        console.log('Próba oczyszczenia tekstu i ponownego parsowania...');
-        
-        // Próba wyodręnbienia JSON z tekstu (często API zwraca tekst wokół JSON)
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            plan = JSON.parse(jsonMatch[0]);
-            console.log('Plan po czyszczeniu i parsowaniu:', JSON.stringify({
-              id: plan.id,
-              hasMetadata: !!plan.metadata,
-              hasPlanWeeks: !!plan.plan_weeks,
-              planWeeksLength: plan.plan_weeks ? plan.plan_weeks.length : 0,
-              metadata: plan.metadata
-            }, null, 2));
-          } catch (error) {
-            console.error('Błąd parsowania oczyszczonego tekstu:', error);
-            throw new Error('Nieprawidłowy format odpowiedzi z API');
-          }
-        } else {
-          throw new Error('Nie można odnaleźć prawidłowego formatu JSON w odpowiedzi');
+        const candidates = response.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!candidates) {
+          console.error('Brak kandydatów w odpowiedzi');
+          return this._createDefaultTrainingPlan();
         }
+        
+        // Próba parsowania JSON z odpowiedzi tekstowej
+        try {
+          plan = JSON.parse(candidates);
+        } catch (parseError) {
+          console.error('Błąd parsowania JSON z odpowiedzi:', parseError);
+          // Próba znalezienia JSON w tekście
+          const jsonMatch = candidates.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              plan = JSON.parse(jsonMatch[0]);
+            } catch (secondParseError) {
+              console.error('Błąd parsowania wyodrębnionego JSON:', secondParseError);
+              return this._createDefaultTrainingPlan();
+            }
+          } else {
+            console.error('Nie znaleziono struktury JSON w odpowiedzi');
+            return this._createDefaultTrainingPlan();
+          }
+        }
+      } catch (error) {
+        console.error('Błąd podczas przetwarzania odpowiedzi:', error);
+        return this._createDefaultTrainingPlan();
       }
       
       // Walidacja podstawowej struktury
@@ -492,31 +309,20 @@ PAMIĘTAJ: Zwróć tylko prawidłowy obiekt JSON zgodny z powyższą strukturą.
         });
         throw new Error('Nieprawidłowa struktura planu - brakujące wymagane pola');
       }
-      
-      if (!plan.plan_weeks || plan.plan_weeks.length === 0) {
-        console.log('Plan ma pustą tablicę plan_weeks, używam tablicy zastępczej');
-        plan.plan_weeks = [
-          {
-            week_num: 1,
-            focus: "Wprowadzenie do biegania",
-            days: [
-              {
-                day_name: "Pon",
-                workout: "Trening wprowadzający - 20-30 minut lekkiego biegu"
-              },
-              {
-                day_name: "Śr",
-                workout: "Trening tempowy - 3-4 km w tempie konwersacyjnym"
-              },
-              {
-                day_name: "Sob",
-                workout: "Długi bieg - 5-6 km w wolnym tempie"
-              }
-            ]
-          }
-        ];
-      }
 
+      // Mapowanie dni tygodnia
+      const defaultDays = ['poniedziałek', 'środa', 'piątek'];
+      plan.plan_weeks.forEach((week, weekIndex) => {
+        if (week.days) {
+          week.days.forEach((day, dayIndex) => {
+            // Jeśli dzień jest w formacie "Dzień X", przypisz domyślny dzień
+            if (day.day_name.startsWith('Dzień')) {
+              day.day_name = defaultDays[dayIndex] || defaultDays[dayIndex % defaultDays.length];
+            }
+          });
+        }
+      });
+      
       return plan;
     } catch (error) {
       console.error('Błąd podczas parsowania odpowiedzi:', error);
