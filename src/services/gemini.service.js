@@ -119,6 +119,9 @@ class GeminiService {
    * @returns {String} Sformatowany prompt
    */
   _createPrompt(userData) {
+    // Obliczanie indywidualnych stref tętna
+    const heartRateZones = this._calculateHeartRateZones(userData);
+
     // Przygotowanie danych z formularza
     const ageInfo = `Wiek: ${userData.age} lat`;
     
@@ -189,6 +192,13 @@ ${maxTimeInfo}
 ${injuriesInfo}
 ${additionalInfo}
 
+### STREFY TĘTNA UŻYTKOWNIKA:
+- ${heartRateZones.zone1.name}: min=${heartRateZones.zone1.min}, max=${heartRateZones.zone1.max}
+- ${heartRateZones.zone2.name}: min=${heartRateZones.zone2.min}, max=${heartRateZones.zone2.max}
+- ${heartRateZones.zone3.name}: min=${heartRateZones.zone3.min}, max=${heartRateZones.zone3.max}
+- ${heartRateZones.zone4.name}: min=${heartRateZones.zone4.min}, max=${heartRateZones.zone4.max}
+- ${heartRateZones.zone5.name}: min=${heartRateZones.zone5.min}, max=${heartRateZones.zone5.max}
+
 ### WYMAGANA STRUKTURA ODPOWIEDZI:
 Plan musi być zwrócony w następującym formacie JSON.
 
@@ -225,9 +235,9 @@ ${examplePlanJson}
               "sec_per_km": number
             } lub null,
             "target_heart_rate": {
-              "min": number lub null,
-              "max": number lub null,
-              "zone": string
+              "min": number (wymagane, użyj wartości ze stref tętna użytkownika),
+              "max": number (wymagane, użyj wartości ze stref tętna użytkownika),
+              "zone": string (opcjonalne, np. "Strefa 2 (Łatwe tempo)")
             },
             "support_exercises": [
               {
@@ -256,8 +266,56 @@ KRYTYCZNE WYMAGANIA:
 9. Uwzględnij dni odpoczynku i regeneracji
 10. Dodaj wskazówki dotyczące monitorowania bólu, jeśli użytkownik zgłasza kontuzje
 11. Uwzględnij ćwiczenia korekcyjne/uzupełniające, jeśli są potrzebne
+12. ZAWSZE używaj stref tętna z sekcji "STREFY TĘTNA UŻYTKOWNIKA" - są one obliczone indywidualnie dla tego użytkownika
 
 WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON.`;
+  }
+
+  _calculateHeartRateZones(userData) {
+    // Obliczanie maksymalnego tętna
+    let maxHR;
+    if (userData.maxHeartRate?.value && userData.maxHeartRate?.measured) {
+      // Jeśli użytkownik podał zmierzone tętno maksymalne, używamy go
+      maxHR = userData.maxHeartRate.value;
+    } else {
+      // W przeciwnym razie obliczamy według wzoru Tanaki
+      maxHR = 208 - (0.7 * userData.age);
+    }
+
+    // Obliczanie tętna spoczynkowego
+    const restingHR = userData.restingHeartRate?.known ? userData.restingHeartRate.value : 60;
+
+    // Obliczanie rezerwy tętna (HRR - Heart Rate Reserve)
+    const hrr = maxHR - restingHR;
+
+    // Obliczanie stref tętna według metody Karvonena
+    return {
+      zone1: {
+        name: "Strefa 1 (Regeneracja)",
+        min: Math.round(restingHR + (hrr * 0.5)),
+        max: Math.round(restingHR + (hrr * 0.6))
+      },
+      zone2: {
+        name: "Strefa 2 (Łatwe tempo)",
+        min: Math.round(restingHR + (hrr * 0.6)),
+        max: Math.round(restingHR + (hrr * 0.7))
+      },
+      zone3: {
+        name: "Strefa 3 (Tempo)",
+        min: Math.round(restingHR + (hrr * 0.7)),
+        max: Math.round(restingHR + (hrr * 0.8))
+      },
+      zone4: {
+        name: "Strefa 4 (Próg)",
+        min: Math.round(restingHR + (hrr * 0.8)),
+        max: Math.round(restingHR + (hrr * 0.9))
+      },
+      zone5: {
+        name: "Strefa 5 (Interwały)",
+        min: Math.round(restingHR + (hrr * 0.9)),
+        max: maxHR
+      }
+    };
   }
 
   /**
