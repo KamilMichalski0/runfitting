@@ -1,0 +1,271 @@
+Ogólne zasady generowania kodu
+
+Używaj najnowszej składni JavaScript (ES6+) z async/await zamiast callbacków
+Stosuj najlepsze praktyki programowania w Node.js
+Pisz modularny kod z jasnym podziałem odpowiedzialności
+Implementuj obsługę błędów na każdym poziomie
+Generuj kod z komentarzami objaśniającymi złożone fragmenty
+Używaj camelCase dla zmiennych i funkcji, PascalCase dla klas
+Dbaj o czytelność i utrzymywalność kodu
+
+Struktura projektu i plików
+
+Twórz nowe pliki według podanej struktury katalogów
+Zachowaj spójną strukturę w obrębie podobnych plików
+Grupuj powiązane funkcjonalności w oddzielnych modułach
+Zastosuj wzorzec dependency injection dla usług i komponentów
+Eksportuj wszystkie potrzebne modele, funkcje i klasy na końcu pliku
+
+Instalacja zależności
+
+Zainstaluj Express.js jako główny framework
+Używaj Mongoose do interakcji z MongoDB
+Dodaj bibliotekę jsonwebtoken do uwierzytelniania
+Zainstaluj express-validator do walidacji
+Użyj biblioteki bcrypt do hashowania haseł
+Zainstaluj dotenv do konfiguracji środowiskowej
+Dodaj cors, helmet i inne pakiety bezpieczeństwa
+Użyj winston lub morgan do logowania
+
+Implementacja modeli
+
+Twórz modele Mongoose z jasno zdefiniowanymi schematami
+Dodaj metody pre-save dla przetwarzania danych (np. hashowanie haseł)
+Implementuj metody instancji i statyczne dla walidacji i transformacji danych
+Wykorzystaj indeksy dla często wyszukiwanych pól
+Dodawaj validatory na poziomie schematu
+
+Implementacja kontrolerów
+
+Zachowaj jeden kontroler na rodzaj zasobu
+Implementuj standardowe metody REST (GET, POST, PUT, DELETE)
+W kontrolerach tylko obsługuj żądania i odpowiedzi HTTP
+Przenoś złożoną logikę biznesową do warstwy serwisów
+Zachowaj spójny format odpowiedzi API
+
+Implementacja serwisów
+
+Umieść logikę biznesową w warstwie serwisów
+Separuj odpowiedzialności poprzez tworzenie specjalizowanych serwisów
+Implementuj interfejsy dla usług, aby ułatwić testowanie
+Nie uzależniaj bezpośrednio od modeli - używaj abstrakcji
+Używaj try/catch do obsługi błędów w operacjach asynchronicznych
+
+Implementacja algorytmów treningowych
+
+Implementuj algorytmy jako niezależne, testowalne funkcje
+Zachowaj czytelność algorytmów poprzez jasne nazewnictwo
+Dokumentuj założenia i ograniczenia algorytmów
+Implementuj walidację danych wejściowych dla algorytmów
+Dodawaj komentarze wyjaśniające złożone formuły i obliczenia
+
+Implementacja routingu
+
+Grupuj trasy według zasobów
+Stosuj middleware uwierzytelniania i autoryzacji
+Używaj middleware walidacji danych wejściowych
+Implementuj obsługę błędów specyficzną dla tras
+Zachowaj hierarchiczną strukturę tras
+
+Obsługa błędów
+
+Twórz spójne komunikaty błędów z odpowiednimi kodami HTTP
+Implementuj globalny middleware do obsługi błędów
+Loguj błędy z odpowiednim poziomem szczegółowości
+Ukrywaj szczegóły techniczne błędów przed użytkownikiem
+Rozróżniaj błędy walidacji, biznesowe i techniczne
+
+Uwierzytelnianie i autoryzacja
+
+Implementuj rejestrację i logowanie użytkowników
+Używaj JWT do bezstanowego uwierzytelniania
+Twórz middleware do weryfikacji tokenów
+Implementuj mechanizm odświeżania tokenów
+Zabezpieczaj wrażliwe endpointy
+
+Testy
+
+Pisz testy jednostkowe dla logiki biznesowej
+Implementuj testy integracyjne dla API
+Używaj mocków do izolowania komponentów w testach
+Testuj przypadki brzegowe i obsługę błędów
+Zapewnij wysokie pokrycie kodu testami
+
+Dokumentacja API
+
+Generuj dokumentację API używając Swagger/OpenAPI
+Dokumentuj wszystkie endpointy, parametry i odpowiedzi
+Dodawaj przykłady wykorzystania API
+Opisuj kody błędów i ich znaczenie
+Aktualizuj dokumentację przy zmianach w API
+
+Wydajność i bezpieczeństwo
+
+Implementuj caching dla często używanych danych
+Używaj indeksów w bazie danych dla optymalizacji zapytań
+Implementuj rate limiting dla API
+Zabezpieczaj API przed typowymi atakami
+Stosuj połączenia TLS/SSL
+
+Instrukcje generowania kluczowych komponentów
+Modele
+javascript// Przykładowy format generowania modelu User
+const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
+
+const userSchema = new mongoose.Schema({
+  // Pola schematu z typami, wymagalnością i domyślnymi wartościami
+  // ...
+}, { timestamps: true });
+
+// Metody pre-save
+userSchema.pre('save', async function(next) {
+  // Logika
+  next();
+});
+
+// Metody instancji
+userSchema.methods.comparePassword = async function(password) {
+  // Implementacja
+};
+
+// Metody statyczne
+userSchema.statics.findByEmail = function(email) {
+  // Implementacja
+};
+
+module.exports = mongoose.model('User', userSchema);
+Kontrolery
+javascript// Przykładowy format generowania kontrolera
+const UserService = require('../services/user.service');
+const { validationResult } = require('express-validator');
+
+// Konstruktor z dependency injection
+class UserController {
+  constructor() {
+    this.userService = new UserService();
+  }
+
+  // Metody obsługi żądań
+  async register(req, res, next) {
+    try {
+      // Walidacja
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      // Logika biznesowa przez serwis
+      const result = await this.userService.registerUser(req.body);
+      
+      // Odpowiedź
+      return res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Więcej metod...
+}
+
+module.exports = new UserController();
+Serwisy
+javascript// Przykładowy format generowania serwisu
+const UserModel = require('../models/user.model');
+const TrainingPlanGenerator = require('../algorithms/training-plan-generator');
+const AppError = require('../utils/app-error');
+
+class UserService {
+  async registerUser(userData) {
+    // Walidacja
+    if (await this.userExists(userData.email)) {
+      throw new AppError('User with this email already exists', 400);
+    }
+
+    // Logika biznesowa
+    const user = new UserModel(userData);
+    await user.save();
+
+    // Zwracanie rezultatu
+    return {
+      userId: user._id,
+      email: user.email
+    };
+  }
+
+  // Więcej metod...
+}
+
+module.exports = UserService;
+Algorytmy
+javascript// Przykładowy format generowania algorytmu
+/**
+ * Oblicza strefy tętna według metody Karvonena (Heart Rate Reserve)
+ * @param {number} age - Wiek użytkownika w latach
+ * @param {number} restingHR - Tętno spoczynkowe użytkownika
+ * @returns {Object} Strefy tętna od 1 do 5
+ */
+function calculateHeartRateZones(age, restingHR) {
+  // Walidacja wejść
+  if (!age || age < 10 || age > 100) {
+    throw new Error('Invalid age value');
+  }
+  
+  if (!restingHR || restingHR < 30 || restingHR > 100) {
+    throw new Error('Invalid resting heart rate value');
+  }
+
+  // Obliczenia
+  const maxHR = 208 - 0.7 * age; // Metoda Tanaka
+  const hrr = maxHR - restingHR; // Heart Rate Reserve
+
+  // Zwrócenie wyników
+  return {
+    zone1: { min: restingHR, max: Math.round(restingHR + 0.6 * hrr) },
+    zone2: { min: Math.round(restingHR + 0.6 * hrr) + 1, max: Math.round(restingHR + 0.7 * hrr) },
+    // Pozostałe strefy...
+  };
+}
+
+module.exports = {
+  calculateHeartRateZones,
+  // Więcej funkcji...
+};
+Routing
+javascript// Przykładowy format generowania router
+const express = require('express');
+const router = express.Router();
+const UserController = require('../controllers/user.controller');
+const { authenticate } = require('../middleware/auth.middleware');
+const { validateRegistration } = require('../validators/user.validator');
+
+// Publiczne endpointy
+router.post('/register', validateRegistration, UserController.register.bind(UserController));
+router.post('/login', UserController.login.bind(UserController));
+
+// Chronione endpointy
+router.get('/profile', authenticate, UserController.getProfile.bind(UserController));
+router.put('/profile', authenticate, UserController.updateProfile.bind(UserController));
+
+module.exports = router;
+Priorytety implementacji
+
+Najpierw skonfiguruj podstawowe środowisko (express, mongoose, podstawowe middleware)
+Zaimplementuj modele danych
+Dodaj uwierzytelnianie i podstawowe kontrolery
+Implementuj algorytmy treningowe
+Dodaj funkcjonalność generowania planów
+Implementuj pozostałe endpointy API
+Dodaj pełną walidację i obsługę błędów
+Implementuj testy i dokumentację
+Zoptymalizuj wydajność i bezpieczeństwo
+
+Zasady walidacji i czyszczenia kodu
+
+Sprawdź czy kod jest zgodny ze standardami ES6+
+Upewnij się, że wszystkie zależności są poprawnie zainstalowane
+Upewnij się, że kod nie zawiera zapętleń i nieskończonych rekurencji
+Sprawdź poprawność obsługi błędów
+Weryfikuj bezpieczeństwo kodu (SQL Injection, XSS, etc.)
+Upewnij się, że kod jest zgodny z podaną strukturą projektu
+Monitoruj wydajność algorytmów (złożoność czasowa i pamięciowa)

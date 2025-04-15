@@ -16,10 +16,42 @@ class TrainingPlanController {
   }
 
   /**
-   * Generuje nowy plan treningowy dla użytkownika
-   * @param {Object} req - Request object
-   * @param {Object} res - Response object
-   * @param {Function} next - Next middleware function
+   * @openapi
+   * /api/training-plan/generate:
+   *   post:
+   *     summary: Generuje nowy plan treningowy dla użytkownika
+   *     tags:
+   *       - TrainingPlan
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               firstName:
+   *                 type: string
+   *               experienceLevel:
+   *                 type: string
+   *               mainGoal:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Plan treningowy został wygenerowany pomyślnie
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     plan:
+   *                       $ref: '#/components/schemas/TrainingPlan'
+   *                     formId:
+   *                       type: string
    */
   async generatePlan(req, res, next) {
     try {
@@ -114,10 +146,21 @@ class TrainingPlanController {
   }
 
   /**
-   * Zapisuje formularz biegowy bez natychmiastowego generowania planu
-   * @param {Object} req - Request object
-   * @param {Object} res - Response object
-   * @param {Function} next - Next middleware function
+   * @openapi
+   * /api/training-plan/forms:
+   *   post:
+   *     summary: Zapisuje formularz biegowy bez generowania planu
+   *     tags:
+   *       - TrainingPlan
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *     responses:
+   *       201:
+   *         description: Formularz został zapisany
    */
   async saveRunningForm(req, res, next) {
     try {
@@ -182,15 +225,26 @@ class TrainingPlanController {
   }
 
   /**
-   * Generuje plan na podstawie wcześniej zapisanego formularza
-   * @param {Object} req - Request object
-   * @param {Object} res - Response object
-   * @param {Function} next - Next middleware function
+   * @openapi
+   * /api/training-plan/generate-from-saved-form/{formId}:
+   *   post:
+   *     summary: Generuje plan treningowy na podstawie zapisanego formularza
+   *     tags:
+   *       - TrainingPlan
+   *     parameters:
+   *       - in: path
+   *         name: formId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       201:
+   *         description: Plan treningowy został wygenerowany pomyślnie
    */
   async generatePlanFromSavedForm(req, res, next) {
     try {
       const { formId } = req.params;
-      const userId = req.user?._id;
+      const userId = req.user._id;
 
       // Pobierz formularz z bazy
       const runningForm = await RunningForm.findOne({ 
@@ -243,10 +297,15 @@ class TrainingPlanController {
   }
 
   /**
-   * Pobiera wszystkie plany treningowe użytkownika
-   * @param {Object} req - Request object
-   * @param {Object} res - Response object
-   * @param {Function} next - Next middleware function
+   * @openapi
+   * /api/training-plan/user-plans:
+   *   get:
+   *     summary: Pobiera wszystkie plany treningowe użytkownika
+   *     tags:
+   *       - TrainingPlan
+   *     responses:
+   *       200:
+   *         description: Lista planów użytkownika
    */
   async getUserPlans(req, res, next) {
     try {
@@ -267,10 +326,21 @@ class TrainingPlanController {
   }
 
   /**
-   * Pobiera szczegóły konkretnego planu treningowego
-   * @param {Object} req - Request object
-   * @param {Object} res - Response object
-   * @param {Function} next - Next middleware function
+   * @openapi
+   * /api/training-plan/details/{planId}:
+   *   get:
+   *     summary: Pobiera szczegóły konkretnego planu treningowego
+   *     tags:
+   *       - TrainingPlan
+   *     parameters:
+   *       - in: path
+   *         name: planId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Szczegóły planu treningowego
    */
   async getPlanDetails(req, res, next) {
     try {
@@ -298,10 +368,21 @@ class TrainingPlanController {
   }
 
   /**
-   * Aktualizuje postęp w planie treningowym
-   * @param {Object} req - Request object
-   * @param {Object} res - Response object
-   * @param {Function} next - Next middleware function
+   * @openapi
+   * /api/training-plan/progress:
+   *   put:
+   *     summary: Aktualizuje postęp w planie treningowym
+   *     tags:
+   *       - TrainingPlan
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *     responses:
+   *       200:
+   *         description: Postęp został zaktualizowany
    */
   async updateProgress(req, res, next) {
     try {
@@ -356,10 +437,21 @@ class TrainingPlanController {
   }
 
   /**
-   * Usuwa plan treningowy
-   * @param {Object} req - Request object
-   * @param {Object} res - Response object
-   * @param {Function} next - Next middleware function
+   * @openapi
+   * /api/training-plan/{planId}:
+   *   delete:
+   *     summary: Usuwa plan treningowy
+   *     tags:
+   *       - TrainingPlan
+   *     parameters:
+   *       - in: path
+   *         name: planId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Plan został usunięty
    */
   async deletePlan(req, res, next) {
     try {
@@ -385,10 +477,15 @@ class TrainingPlanController {
   }
 
   /**
-   * Pobiera aktualny tydzień treningowy
-   * @param {Object} req - Request object
-   * @param {Object} res - Response object
-   * @param {Function} next - Next middleware function
+   * @openapi
+   * /api/training-plan/current-week:
+   *   get:
+   *     summary: Pobiera aktualny tydzień treningowy
+   *     tags:
+   *       - TrainingPlan
+   *     responses:
+   *       200:
+   *         description: Szczegóły aktualnego tygodnia
    */
   async getCurrentWeek(req, res, next) {
     try {
@@ -433,10 +530,21 @@ class TrainingPlanController {
   }
 
   /**
-   * Zapisuje nowy formularz biegowy
-   * @param {Object} req - Obiekt żądania Express
-   * @param {Object} res - Obiekt odpowiedzi Express
-   * @param {Function} next - Funkcja middleware następnego kroku
+   * @openapi
+   * /api/training-plan/forms:
+   *   post:
+   *     summary: Zapisuje nowy formularz biegowy
+   *     tags:
+   *       - TrainingPlan
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *     responses:
+   *       201:
+   *         description: Formularz został zapisany
    */
   async submitRunningForm(req, res, next) {
     try {
@@ -463,10 +571,15 @@ class TrainingPlanController {
   }
 
   /**
-   * Pobiera wszystkie formularze biegowe użytkownika
-   * @param {Object} req - Obiekt żądania Express
-   * @param {Object} res - Obiekt odpowiedzi Express
-   * @param {Function} next - Funkcja middleware następnego kroku
+   * @openapi
+   * /api/training-plan/user-forms:
+   *   get:
+   *     summary: Pobiera wszystkie formularze biegowe użytkownika
+   *     tags:
+   *       - TrainingPlan
+   *     responses:
+   *       200:
+   *         description: Lista formularzy biegowych
    */
   async getUserRunningForms(req, res, next) {
     try {
@@ -487,10 +600,21 @@ class TrainingPlanController {
   }
 
   /**
-   * Pobiera szczegóły konkretnego formularza biegowego
-   * @param {Object} req - Obiekt żądania Express
-   * @param {Object} res - Obiekt odpowiedzi Express
-   * @param {Function} next - Funkcja middleware następnego kroku
+   * @openapi
+   * /api/training-plan/form-details/{formId}:
+   *   get:
+   *     summary: Pobiera szczegóły konkretnego formularza biegowego
+   *     tags:
+   *       - TrainingPlan
+   *     parameters:
+   *       - in: path
+   *         name: formId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Szczegóły formularza biegowego
    */
   async getRunningFormDetails(req, res, next) {
     try {
@@ -527,10 +651,21 @@ class TrainingPlanController {
   }
 
   /**
-   * Generuje plan treningowy na podstawie formularza biegowego
-   * @param {Object} req - Obiekt żądania Express
-   * @param {Object} res - Obiekt odpowiedzi Express
-   * @param {Function} next - Funkcja middleware następnego kroku
+   * @openapi
+   * /api/training-plan/generate-from-form:
+   *   post:
+   *     summary: Generuje plan treningowy na podstawie formularza biegowego
+   *     tags:
+   *       - TrainingPlan
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *     responses:
+   *       201:
+   *         description: Plan treningowy został wygenerowany
    */
   async generatePlanFromForm(req, res, next) {
     try {
@@ -614,10 +749,21 @@ class TrainingPlanController {
   }
 
   /**
-   * Regeneruje plan treningowy na podstawie formularza biegowego, nawet jeśli został już przetworzony
-   * @param {Object} req - Obiekt żądania Express
-   * @param {Object} res - Obiekt odpowiedzi Express
-   * @param {Function} next - Funkcja middleware następnego kroku
+   * @openapi
+   * /api/training-plan/regenerate-from-form/{formId}:
+   *   post:
+   *     summary: Regeneruje plan treningowy na podstawie formularza biegowego
+   *     tags:
+   *       - TrainingPlan
+   *     parameters:
+   *       - in: path
+   *         name: formId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       201:
+   *         description: Plan treningowy został zregenerowany
    */
   async regeneratePlanFromForm(req, res, next) {
     try {
@@ -679,7 +825,7 @@ class TrainingPlanController {
         status: 'success',
         data: {
           planId: trainingPlan._id,
-          message: 'Plan treningowy został wygenerowany pomyślnie'
+          message: 'Plan treningowy został zregenerowany pomyślnie'
         }
       });
     } catch (error) {
