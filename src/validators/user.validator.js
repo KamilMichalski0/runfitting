@@ -18,54 +18,6 @@ exports.validate = (req, res, next) => {
 };
 
 /**
- * Walidacja podczas rejestracji użytkownika
- */
-exports.validateRegistration = [
-  body('email')
-    .isEmail()
-    .withMessage('Proszę podać prawidłowy adres email')
-    .normalizeEmail(),
-  body('password')
-    .isLength({ min: 8 })
-    .withMessage('Hasło musi mieć co najmniej 8 znaków')
-    .matches(/[a-zA-Z]/)
-    .withMessage('Hasło musi zawierać co najmniej jedną literę')
-    .matches(/\d/)
-    .withMessage('Hasło musi zawierać co najmniej jedną cyfrę')
-    .matches(/[!@#$%^&*(),.?":{}|<>]/)
-    .withMessage('Hasło musi zawierać co najmniej jeden znak specjalny'),
-  body('confirmPassword')
-    .custom((value, { req }) => {
-      if (value !== req.body.password) {
-        throw new Error('Hasła muszą być identyczne');
-      }
-      return true;
-    }),
-  body('name')
-    .trim()
-    .isLength({ min: 2 })
-    .withMessage('Imię musi mieć co najmniej 2 znaki')
-    .escape(),
-  body('height')
-    .optional()
-    .isFloat({ min: 100, max: 250 })
-    .withMessage('Wzrost musi być pomiędzy 100 a 250 cm'),
-  body('weight')
-    .optional()
-    .isFloat({ min: 30, max: 300 })
-    .withMessage('Waga musi być pomiędzy 30 a 300 kg'),
-  body('age')
-    .optional()
-    .isInt({ min: 15, max: 120 })
-    .withMessage('Wiek musi być pomiędzy 15 a 120 lat'),
-  body('gender')
-    .optional()
-    .isIn(['male', 'female', 'other'])
-    .withMessage('Płeć musi być jedną z: male, female, other'),
-  exports.validate
-];
-
-/**
  * Walidacja podczas aktualizacji profilu użytkownika
  */
 exports.validateProfileUpdate = [
@@ -96,52 +48,6 @@ exports.validateProfileUpdate = [
     .optional()
     .isIn(['male', 'female', 'other'])
     .withMessage('Płeć musi być jedną z: male, female, other'),
-  exports.validate
-];
-
-/**
- * Walidacja podczas zmiany hasła użytkownika
- */
-exports.validatePasswordChange = [
-  body('currentPassword')
-    .notEmpty()
-    .withMessage('Proszę podać aktualne hasło'),
-  body('newPassword')
-    .isLength({ min: 8 })
-    .withMessage('Hasło musi mieć co najmniej 8 znaków')
-    .matches(/[a-zA-Z]/)
-    .withMessage('Hasło musi zawierać co najmniej jedną literę')
-    .matches(/\d/)
-    .withMessage('Hasło musi zawierać co najmniej jedną cyfrę')
-    .matches(/[!@#$%^&*(),.?":{}|<>]/)
-    .withMessage('Hasło musi zawierać co najmniej jeden znak specjalny')
-    .custom((value, { req }) => {
-      if (value === req.body.currentPassword) {
-        throw new Error('Nowe hasło musi być różne od obecnego hasła');
-      }
-      return true;
-    }),
-  body('confirmNewPassword')
-    .custom((value, { req }) => {
-      if (value !== req.body.newPassword) {
-        throw new Error('Hasła muszą być identyczne');
-      }
-      return true;
-    }),
-  exports.validate
-];
-
-/**
- * Walidacja podczas logowania użytkownika
- */
-exports.validateLogin = [
-  body('email')
-    .isEmail()
-    .withMessage('Proszę podać prawidłowy adres email')
-    .normalizeEmail(),
-  body('password')
-    .notEmpty()
-    .withMessage('Proszę podać hasło'),
   exports.validate
 ];
 
@@ -201,4 +107,4 @@ exports.validateTrainingGoal = [
   body('trainingGoals.priority')
     .optional()
     .isIn(['finish', 'improve', 'compete']).withMessage('Priorytet musi mieć jedną z wartości: finish, improve, compete')
-]; 
+];

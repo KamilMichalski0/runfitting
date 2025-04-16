@@ -1,6 +1,5 @@
 const express = require('express');
 const trainingPlanController = require('../controllers/training-plan.controller');
-const authMiddleware = require('../middleware/auth.middleware');
 const { planValidators, trainingDayValidators } = require('../validators/plan.validators');
 
 const router = express.Router();
@@ -119,8 +118,7 @@ const router = express.Router();
  *           description: Czy użytkownik ma kontuzje/problemy zdrowotne
  */
 
-// Ochrona wszystkich tras
-router.use(authMiddleware.authenticate);
+// Usunięto: router.use(authMiddleware.authenticate);
 
 /**
  * @swagger

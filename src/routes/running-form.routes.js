@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const trainingPlanController = require('../controllers/training-plan.controller');
-const { authenticate } = require('../middleware/auth.middleware');
 const { validateRunningFormSubmission } = require('../validators/running-form.validators');
 
 /**
@@ -103,7 +102,7 @@ const { validateRunningFormSubmission } = require('../validators/running-form.va
  *       401:
  *         description: Brak uwierzytelnienia
  */
-router.post('/', authenticate, validateRunningFormSubmission, trainingPlanController.submitRunningForm);
+router.post('/', validateRunningFormSubmission, trainingPlanController.submitRunningForm);
 
 /**
  * @swagger
@@ -119,7 +118,7 @@ router.post('/', authenticate, validateRunningFormSubmission, trainingPlanContro
  *       401:
  *         description: Brak uwierzytelnienia
  */
-router.get('/', authenticate, trainingPlanController.getUserRunningForms);
+router.get('/', trainingPlanController.getUserRunningForms);
 
 /**
  * @swagger
@@ -144,7 +143,7 @@ router.get('/', authenticate, trainingPlanController.getUserRunningForms);
  *       404:
  *         description: Nie znaleziono formularza biegowego
  */
-router.get('/:id', authenticate, trainingPlanController.getRunningFormDetails);
+router.get('/:id', trainingPlanController.getRunningFormDetails);
 
 /**
  * @swagger
@@ -171,7 +170,7 @@ router.get('/:id', authenticate, trainingPlanController.getRunningFormDetails);
  *       404:
  *         description: Nie znaleziono formularza biegowego
  */
-router.post('/:id/generate-plan', authenticate, trainingPlanController.generatePlanFromForm);
+router.post('/:id/generate-plan', trainingPlanController.generatePlanFromForm);
 
 /**
  * @swagger
@@ -204,7 +203,7 @@ router.post('/:id/generate-plan', authenticate, trainingPlanController.generateP
  *       404:
  *         description: Nie znaleziono formularza biegowego
  */
-router.post('/:id/generate-plan', authenticate, trainingPlanController.generatePlanFromForm);
+router.post('/:id/generate-plan', trainingPlanController.generatePlanFromForm);
 
 /**
  * @swagger
@@ -229,6 +228,6 @@ router.post('/:id/generate-plan', authenticate, trainingPlanController.generateP
  *       404:
  *         description: Nie znaleziono formularza biegowego
  */
-router.post('/:id/regenerate-plan', authenticate, trainingPlanController.regeneratePlanFromForm);
+router.post('/:id/regenerate-plan', trainingPlanController.regeneratePlanFromForm);
 
 module.exports = router; 

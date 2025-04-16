@@ -309,10 +309,15 @@ class TrainingPlanController {
    */
   async getUserPlans(req, res, next) {
     try {
-      const userId = req.user._id;
+      console.log('User from token:', req.user);
+      const userId = req.user.sub; // Supabase używa sub jako ID użytkownika
+      
+      console.log('Szukam planów dla userId:', userId);
       const plans = await TrainingPlan.find({ userId })
         .sort({ createdAt: -1 });
 
+      console.log(`Znaleziono ${plans.length} planów`);
+      
       res.status(200).json({
         status: 'success',
         results: plans.length,
@@ -321,6 +326,7 @@ class TrainingPlanController {
         }
       });
     } catch (error) {
+      console.error('Błąd podczas pobierania planów:', error);
       next(error);
     }
   }

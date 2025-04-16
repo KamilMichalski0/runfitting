@@ -96,9 +96,9 @@ const trainingPlanSchema = new mongoose.Schema({
     required: [true, 'Uwagi są wymagane']
   }],
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: [true, 'Plan musi być przypisany do użytkownika']
+    type: String,
+    required: [true, 'Plan musi być przypisany do użytkownika'],
+    index: true
   },
   isActive: {
     type: Boolean,
