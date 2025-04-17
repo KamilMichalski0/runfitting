@@ -532,6 +532,33 @@ router.post('/form/:formId/generate', trainingPlanController.generatePlanFromSav
 
 /**
  * @swagger
+ * /api/plans/regenerate/{formId}:
+ *   post:
+ *     summary: Regeneruje plan treningowy na podstawie istniejącego formularza
+ *     tags: [Plany Treningowe]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: formId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID formularza do regeneracji planu
+ *     responses:
+ *       201:
+ *         description: Plan treningowy został zregenerowany pomyślnie
+ *       400:
+ *         description: Nieprawidłowy format ID formularza
+ *       401:
+ *         description: Brak uwierzytelnienia
+ *       404:
+ *         description: Formularz nie został znaleziony
+ */
+router.post('/regenerate/:formId', trainingPlanController.regeneratePlanFromForm);
+
+/**
+ * @swagger
  * /api/plans/progress:
  *   post:
  *     summary: Aktualizacja postępu w planie treningowym

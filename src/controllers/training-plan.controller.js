@@ -56,7 +56,7 @@ class TrainingPlanController {
   async generatePlan(req, res, next) {
     try {
       const formData = req.body;
-      const userId = req.user?._id;
+      const userId = req.user.sub;
 
       // Sprawdzenie wymaganych pól w obu formatach danych
       const isLegacyFormat = formData.firstName !== undefined && 
@@ -165,7 +165,7 @@ class TrainingPlanController {
   async saveRunningForm(req, res, next) {
     try {
       const formData = req.body;
-      const userId = req.user?._id;
+      const userId = req.user.sub;
       
       // Sprawdzenie wymaganych pól w obu formatach danych
       const isLegacyFormat = formData.firstName !== undefined && 
@@ -244,7 +244,7 @@ class TrainingPlanController {
   async generatePlanFromSavedForm(req, res, next) {
     try {
       const { formId } = req.params;
-      const userId = req.user._id;
+      const userId = req.user.sub;
 
       // Pobierz formularz z bazy
       const runningForm = await RunningForm.findOne({ 
@@ -351,10 +351,10 @@ class TrainingPlanController {
   async getPlanDetails(req, res, next) {
     try {
       const planId = req.params.id;
-      const userId = req.user._id;
+      const userId = req.user.sub;
 
       const plan = await TrainingPlan.findOne({
-        _id: planId,
+        id: planId,
         userId
       });
 
@@ -369,7 +369,7 @@ class TrainingPlanController {
         }
       });
     } catch (error) {
-      next(error);
+      next(new AppError(`Błąd podczas pobierania planu: ${error.message}`, error.statusCode || 500));
     }
   }
 
@@ -393,7 +393,7 @@ class TrainingPlanController {
   async updateProgress(req, res, next) {
     try {
       const { planId, weekNum, dayName, completed } = req.body;
-      const userId = req.user._id;
+      const userId = req.user.sub;
 
       const plan = await TrainingPlan.findOne({
         _id: planId,
@@ -462,7 +462,7 @@ class TrainingPlanController {
   async deletePlan(req, res, next) {
     try {
       const planId = req.params.id;
-      const userId = req.user._id;
+      const userId = req.user.sub;
 
       const plan = await TrainingPlan.findOneAndDelete({
         _id: planId,
@@ -496,7 +496,7 @@ class TrainingPlanController {
   async getCurrentWeek(req, res, next) {
     try {
       const planId = req.params.id;
-      const userId = req.user._id;
+      const userId = req.user.sub;
 
       const plan = await TrainingPlan.findOne({
         _id: planId,
@@ -557,7 +557,7 @@ class TrainingPlanController {
       // Tworzenie nowego formularza z danymi z żądania
       const formData = {
         ...req.body,
-        userId: req.user._id,
+        userId: req.user.sub,
         status: 'pending'
       };
 
@@ -589,7 +589,7 @@ class TrainingPlanController {
    */
   async getUserRunningForms(req, res, next) {
     try {
-      const forms = await RunningForm.find({ userId: req.user._id })
+      const forms = await RunningForm.find({ userId: req.user.sub })
         .select('firstName mainGoal experienceLevel createdAt status')
         .sort({ createdAt: -1 });
 
@@ -626,7 +626,7 @@ class TrainingPlanController {
     try {
       const form = await RunningForm.findOne({ 
         _id: req.params.id,
-        userId: req.user._id
+        userId: req.user.sub
       });
 
       if (!form) {
@@ -636,7 +636,7 @@ class TrainingPlanController {
       // Sprawdzenie, czy formularz ma już powiązany plan treningowy
       let planId = null;
       const plan = await TrainingPlan.findOne({ 
-        userId: req.user._id,
+        userId: req.user.sub,
         'metadata.description': { $regex: form.firstName, $options: 'i' }
       }).sort({ createdAt: -1 });
       
@@ -678,7 +678,7 @@ class TrainingPlanController {
       // Znajdź formularz po ID i sprawdź, czy należy do zalogowanego użytkownika
       const runningForm = await RunningForm.findOne({
         _id: req.params.id,
-        userId: req.user._id
+        userId: req.user.sub
       });
 
       if (!runningForm) {
@@ -732,7 +732,7 @@ class TrainingPlanController {
           rules: ['Przerwij trening przy bólu powyżej 5/10', 'Skonsultuj się z lekarzem przy utrzymującym się bólu']
         },
         notes: planData.notes || ['Dostosuj plan do swoich możliwości', 'Pamiętaj o nawodnieniu'],
-        userId: req.user._id,
+        userId: req.user.sub,
         isActive: true
       });
 
@@ -773,10 +773,17 @@ class TrainingPlanController {
    */
   async regeneratePlanFromForm(req, res, next) {
     try {
+      const { formId } = req.params;
+
+      // Walidacja formatu ObjectId
+      if (!mongoose.Types.ObjectId.isValid(formId)) {
+        throw new AppError('Nieprawidłowy format ID formularza', 400);
+      }
+
       // Znajdź formularz po ID i sprawdź, czy należy do zalogowanego użytkownika
       const runningForm = await RunningForm.findOne({
-        _id: req.params.id,
-        userId: req.user._id
+        _id: formId,
+        userId: req.user.sub
       });
 
       if (!runningForm) {
@@ -821,7 +828,7 @@ class TrainingPlanController {
           rules: ['Przerwij trening przy bólu powyżej 5/10', 'Skonsultuj się z lekarzem przy utrzymującym się bólu']
         },
         notes: planData.notes || ['Dostosuj plan do swoich możliwości', 'Pamiętaj o nawodnieniu'],
-        userId: req.user._id,
+        userId: req.user.sub,
         isActive: true
       });
 

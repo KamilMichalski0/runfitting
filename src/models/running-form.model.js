@@ -205,8 +205,9 @@ const runningFormSchema = new mongoose.Schema({
 
   // Informacje systemowe
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    type: String,
+    required: true,
+    index: true
   },
   status: {
     type: String,

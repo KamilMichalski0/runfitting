@@ -109,45 +109,49 @@ exports.validateTimeConsistency = (req, res, next) => {
 
   // Funkcja pomocnicza do sprawdzania poprawności wartości czasu
   const validateTimeEntry = (distanceName, timeObj, fieldName) => {
-    if (timeObj && Object.keys(timeObj).length > 0) {
-      // Sprawdź czy nie podano samych sekund bez minut lub godzin
-      if (timeObj.seconds !== undefined && timeObj.minutes === undefined && timeObj.hours === undefined) {
+    // Jeśli nie podano obiektu czasu lub jest pusty, pomijamy walidację
+    if (!timeObj || Object.keys(timeObj).length === 0) {
+      return;
+    }
+
+    // Sprawdź czy nie podano samych sekund bez minut lub godzin
+    if (timeObj.seconds !== undefined && timeObj.minutes === undefined && timeObj.hours === undefined) {
+      hasError = true;
+      errors.push({
+        value: timeObj,
+        msg: `Dla ${distanceName} musisz podać minuty, jeśli podajesz sekundy`,
+        param: `personalBests.${fieldName}`,
+        location: 'body'
+      });
+    }
+    
+    // Sprawdź czy dla dystansów wymagających godzin, podano godziny
+    if ((fieldName === 'marathon' || fieldName === 'halfMarathon') && timeObj.minutes !== undefined) {
+      if (timeObj.minutes > 59 && timeObj.hours === undefined) {
         hasError = true;
         errors.push({
           value: timeObj,
-          msg: `Dla ${distanceName} musisz podać minuty, jeśli podajesz sekundy`,
+          msg: `Dla ${distanceName} podaj godziny, jeśli czas przekracza 59 minut`,
           param: `personalBests.${fieldName}`,
           location: 'body'
         });
       }
-      
-      // Sprawdź czy dla dystansów wymagających godzin, podano godziny
-      if (fieldName === 'marathon' || fieldName === 'halfMarathon') {
-        if (timeObj.minutes !== undefined && timeObj.minutes > 59 && timeObj.hours === undefined) {
-          hasError = true;
-          errors.push({
-            value: timeObj,
-            msg: `Dla ${distanceName} podaj godziny, jeśli czas przekracza 59 minut`,
-            param: `personalBests.${fieldName}`,
-            location: 'body'
-          });
-        }
-      }
     }
   };
 
-  // Sprawdź każdy dystans
-  if (personalBests) {
-    if (personalBests.fiveKm) {
+  // Sprawdź każdy dystans tylko jeśli personalBests zostało podane
+  if (personalBests && typeof personalBests === 'object') {
+    // Walidujemy tylko te rekordy, które zostały faktycznie podane
+    if (Object.keys(personalBests).includes('fiveKm')) {
       validateTimeEntry('5km', personalBests.fiveKm, 'fiveKm');
     }
-    if (personalBests.tenKm) {
+    if (Object.keys(personalBests).includes('tenKm')) {
       validateTimeEntry('10km', personalBests.tenKm, 'tenKm');
     }
-    if (personalBests.halfMarathon) {
+    if (Object.keys(personalBests).includes('halfMarathon')) {
       validateTimeEntry('półmaratonu', personalBests.halfMarathon, 'halfMarathon');
     }
-    if (personalBests.marathon) {
+    if (Object.keys(personalBests).includes('marathon')) {
       validateTimeEntry('maratonu', personalBests.marathon, 'marathon');
     }
   }

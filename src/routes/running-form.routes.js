@@ -160,33 +160,6 @@ router.get('/:id', trainingPlanController.getRunningFormDetails);
  *         schema:
  *           type: string
  *         description: ID formularza biegowego
- *     responses:
- *       201:
- *         description: Plan treningowy wygenerowany pomyślnie
- *       400:
- *         description: Formularz już przetworzony lub błąd generowania
- *       401:
- *         description: Brak uwierzytelnienia
- *       404:
- *         description: Nie znaleziono formularza biegowego
- */
-router.post('/:id/generate-plan', trainingPlanController.generatePlanFromForm);
-
-/**
- * @swagger
- * /api/running-forms/{id}/generate-plan:
- *   post:
- *     summary: Generuje plan treningowy na podstawie formularza biegowego
- *     tags: [Formularze biegowe]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID formularza biegowego
  *       - in: query
  *         name: force
  *         schema:
@@ -223,11 +196,17 @@ router.post('/:id/generate-plan', trainingPlanController.generatePlanFromForm);
  *     responses:
  *       201:
  *         description: Plan treningowy wygenerowany pomyślnie
+ *       400:
+ *         description: Nieprawidłowy format ID formularza
  *       401:
  *         description: Brak uwierzytelnienia
  *       404:
  *         description: Nie znaleziono formularza biegowego
  */
-router.post('/:id/regenerate-plan', trainingPlanController.regeneratePlanFromForm);
+router.post('/:id/regenerate-plan', (req, res, next) => {
+  // Przekazujemy id jako formId do kontrolera
+  req.params.formId = req.params.id;
+  trainingPlanController.regeneratePlanFromForm(req, res, next);
+});
 
 module.exports = router; 
