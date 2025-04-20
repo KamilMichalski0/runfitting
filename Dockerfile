@@ -25,4 +25,4 @@ EXPOSE 3002
 # ENV NODE_ENV=production
 
 # Run the app when the container launches
-CMD [ "node", "server.js" ]
+CMD [ "node", "src/server.js" ]
