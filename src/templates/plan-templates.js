@@ -1264,5 +1264,452 @@ module.exports = {
         ]
       }
     ]
+  },
+
+  'start_running_2days': {
+    id: 'start_running_2days',
+    metadata: {
+      discipline: "running",
+      target_group: "Osoby rozpoczynające przygodę z bieganiem",
+      target_goal: "start_running",
+      level_hint: "absolute_beginner",
+      days_per_week: 2,
+      duration_weeks: 8,
+      base_distance_km: 0,
+      description: "Łagodny plan dla osób rozpoczynających przygodę z bieganiem. Mieszanka marszu i biegu, stopniowo zwiększająca czas biegu.",
+      author: "RunFitting AI"
+    },
+    plan_weeks: [
+      {
+        week_num: 1,
+        focus: "Wprowadzenie do aktywności, nauka prawidłowego marszu i biegu.",
+        days: [
+          { 
+            day_name: "Wtorek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          },
+          { 
+            day_name: "Piątek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie statyczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia stabilizacyjne", sets: 1, duration: 5 }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        week_num: 2,
+        focus: "Zwiększenie czasu biegu, utrzymanie prawidłowej techniki.",
+        days: [
+          { 
+            day_name: "Wtorek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 2 min, marsz 5 min, bieg 2 min, marsz 5 min', 
+              duration: 19,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          },
+          { 
+            day_name: "Piątek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 2 min, marsz 5 min, bieg 2 min, marsz 5 min', 
+              duration: 19,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie statyczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia stabilizacyjne", sets: 1, duration: 5 }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+
+  'start_running_3days': {
+    id: 'start_running_3days',
+    metadata: {
+      discipline: "running",
+      target_group: "Osoby rozpoczynające przygodę z bieganiem",
+      target_goal: "start_running",
+      level_hint: "absolute_beginner",
+      days_per_week: 3,
+      duration_weeks: 8,
+      base_distance_km: 0,
+      description: "Plan dla osób rozpoczynających przygodę z bieganiem. Systematyczne zwiększanie czasu biegu z elementami marszu.",
+      author: "RunFitting AI"
+    },
+    plan_weeks: [
+      {
+        week_num: 1,
+        focus: "Wprowadzenie do regularnej aktywności, nauka prawidłowej techniki.",
+        days: [
+          { 
+            day_name: "Wtorek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          },
+          { 
+            day_name: "Czwartek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Ćwiczenia stabilizacyjne", sets: 1, duration: 5 },
+                { name: "Rozciąganie statyczne", sets: 1, duration: 5 }
+              ]
+            }
+          },
+          { 
+            day_name: "Sobota", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie całego ciała", sets: 1, duration: 10 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        week_num: 2,
+        focus: "Zwiększenie czasu biegu, utrzymanie prawidłowej techniki.",
+        days: [
+          { 
+            day_name: "Wtorek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 2 min, marsz 5 min, bieg 2 min, marsz 5 min', 
+              duration: 19,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          },
+          { 
+            day_name: "Czwartek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 2 min, marsz 5 min, bieg 2 min, marsz 5 min', 
+              duration: 19,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Ćwiczenia stabilizacyjne", sets: 1, duration: 5 },
+                { name: "Rozciąganie statyczne", sets: 1, duration: 5 }
+              ]
+            }
+          },
+          { 
+            day_name: "Sobota", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 2 min, marsz 5 min, bieg 2 min, marsz 5 min', 
+              duration: 19,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie całego ciała", sets: 1, duration: 10 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+
+  'start_running_4days': {
+    id: 'start_running_4days',
+    metadata: {
+      discipline: "running",
+      target_group: "Osoby rozpoczynające przygodę z bieganiem",
+      target_goal: "start_running",
+      level_hint: "absolute_beginner",
+      days_per_week: 4,
+      duration_weeks: 8,
+      base_distance_km: 0,
+      description: "Intensywniejszy plan dla osób rozpoczynających przygodę z bieganiem. Szybsze przejście do ciągłego biegu.",
+      author: "RunFitting AI"
+    },
+    plan_weeks: [
+      {
+        week_num: 1,
+        focus: "Wprowadzenie do regularnej aktywności, nauka prawidłowej techniki.",
+        days: [
+          { 
+            day_name: "Poniedziałek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          },
+          { 
+            day_name: "Środa", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Ćwiczenia stabilizacyjne", sets: 1, duration: 5 },
+                { name: "Rozciąganie statyczne", sets: 1, duration: 5 }
+              ]
+            }
+          },
+          { 
+            day_name: "Piątek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          },
+          { 
+            day_name: "Niedziela", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie całego ciała", sets: 1, duration: 10 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        week_num: 2,
+        focus: "Zwiększenie czasu biegu, utrzymanie prawidłowej techniki.",
+        days: [
+          { 
+            day_name: "Poniedziałek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 2 min, marsz 5 min, bieg 2 min, marsz 5 min', 
+              duration: 19,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          },
+          { 
+            day_name: "Środa", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 2 min, marsz 5 min, bieg 2 min, marsz 5 min', 
+              duration: 19,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Ćwiczenia stabilizacyjne", sets: 1, duration: 5 },
+                { name: "Rozciąganie statyczne", sets: 1, duration: 5 }
+              ]
+            }
+          },
+          { 
+            day_name: "Piątek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 2 min, marsz 5 min, bieg 2 min, marsz 5 min', 
+              duration: 19,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          },
+          { 
+            day_name: "Niedziela", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Marsz 5 min, bieg 2 min, marsz 5 min, bieg 2 min, marsz 5 min', 
+              duration: 19,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie całego ciała", sets: 1, duration: 10 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          }
+        ]
+      }
+    ]
   }
 };

@@ -1,6 +1,50 @@
 // Plan szablonów biegowych - kompletny słownik obejmujący wszystkie kombinacje kryteriów
 
 const planTemplates = {
+    // ABSOLUTNI POCZĄTKUJĄCY - START Z BIEGANIA
+    'start_running_2days': {
+      id: 'start_running_2days',
+      metadata: {
+        discipline: "running",
+        target_group: "Osoby rozpoczynające przygodę z bieganiem",
+        target_goal: "start_running",
+        level_hint: "absolute_beginner",
+        days_per_week: 2,
+        duration_weeks: 8,
+        base_distance_km: 0,
+        description: "Łagodny plan dla osób rozpoczynających przygodę z bieganiem. Mieszanka marszu i biegu, stopniowo zwiększająca czas biegu.",
+        author: "RunFitting AI"
+      }
+    },
+    'start_running_3days': {
+      id: 'start_running_3days',
+      metadata: {
+        discipline: "running",
+        target_group: "Osoby rozpoczynające przygodę z bieganiem",
+        target_goal: "start_running",
+        level_hint: "absolute_beginner",
+        days_per_week: 3,
+        duration_weeks: 8,
+        base_distance_km: 0,
+        description: "Plan dla osób rozpoczynających przygodę z bieganiem. Systematyczne zwiększanie czasu biegu z elementami marszu.",
+        author: "RunFitting AI"
+      }
+    },
+    'start_running_4days': {
+      id: 'start_running_4days',
+      metadata: {
+        discipline: "running",
+        target_group: "Osoby rozpoczynające przygodę z bieganiem",
+        target_goal: "start_running",
+        level_hint: "absolute_beginner",
+        days_per_week: 4,
+        duration_weeks: 8,
+        base_distance_km: 0,
+        description: "Intensywniejszy plan dla osób rozpoczynających przygodę z bieganiem. Szybsze przejście do ciągłego biegu.",
+        author: "RunFitting AI"
+      }
+    },
+    
     // POCZĄTKUJĄCY (BEGINNER) - 5KM
     '5km_beginner_3days': {
       id: '5km_beginner_3days',
