@@ -30,7 +30,7 @@ jobs:
         ECR_REPOSITORY: spartcom/runfitting
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        docker compose build runfitting
+        docker build -t runfitting:latest . # Zbuduj obraz bezpośrednio z Dockerfile
         docker tag runfitting:latest $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         docker tag runfitting:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
