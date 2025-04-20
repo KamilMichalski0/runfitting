@@ -24,14 +24,14 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
     
-    - name: Build and push runfitting
+    - name: Build and push runfiting
       env:
         ECR_REGISTRY: 586794470915.dkr.ecr.eu-north-1.amazonaws.com
-        ECR_REPOSITORY: spartcom/runfitting
+        ECR_REPOSITORY: spartcom/runfiting
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        docker build -t runfitting:latest . # Zbuduj obraz bezpośrednio z Dockerfile
-        docker tag runfitting:latest $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker tag runfitting:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        docker build -t runfiting:latest . # Zbuduj obraz bezpośrednio z Dockerfile
+        docker tag runfiting:latest $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker tag runfiting:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
