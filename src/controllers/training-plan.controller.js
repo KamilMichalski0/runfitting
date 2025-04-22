@@ -90,6 +90,7 @@ class TrainingPlanController {
           experienceLevel: formData.level,
           mainGoal: formData.goal,
           trainingDaysPerWeek: formData.daysPerWeek || 3,
+          daysPerWeek: formData.daysPerWeek || 3,
           weeklyKilometers: formData.weeklyDistance || 20,
           age: formData.age || 30,
           description: formData.description,
