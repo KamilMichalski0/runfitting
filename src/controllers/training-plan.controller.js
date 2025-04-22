@@ -56,6 +56,8 @@ class TrainingPlanController {
   async generatePlan(req, res, next) {
     try {
       const formData = req.body;
+      console.log('Otrzymane dane formularza:', formData);
+      
       const userId = req.user.sub;
 
       // Sprawdzenie wymaganych pól w obu formatach danych
@@ -66,6 +68,12 @@ class TrainingPlanController {
       const isNewFormat = formData.name !== undefined && 
                           formData.level !== undefined &&
                           formData.goal !== undefined;
+
+      console.log('Format danych:', { isLegacyFormat, isNewFormat });
+      console.log('Dni treningowe w tygodniu:', {
+        daysPerWeek: formData.daysPerWeek,
+        trainingDaysPerWeek: formData.trainingDaysPerWeek
+      });
 
       if (!isLegacyFormat && !isNewFormat) {
         return res.status(400).json({ 
@@ -84,13 +92,13 @@ class TrainingPlanController {
           trainingDaysPerWeek: formData.daysPerWeek || 3,
           weeklyKilometers: formData.weeklyDistance || 20,
           age: formData.age || 30,
-          // inne pola, jeśli są dostępne
           description: formData.description,
           hasInjuries: formData.hasInjuries || false,
           restingHeartRate: formData.heartRate 
             ? { known: true, value: formData.heartRate } 
             : { known: false, value: 60 }
         };
+        console.log('Przetworzone dane:', processedFormData);
       }
 
       // Zapisanie danych formularza w bazie
@@ -100,6 +108,7 @@ class TrainingPlanController {
         status: 'pending'
       });
       
+      console.log('Dane formularza przed zapisem:', runningForm);
       await runningForm.save();
 
       // Generowanie planu
@@ -351,11 +360,16 @@ class TrainingPlanController {
    */
   async getPlanDetails(req, res, next) {
     try {
-      const planId = req.params.id;
+      const planId = req.params.planId;
       const userId = req.user.sub;
 
+      // Walidacja formatu ObjectId
+      if (!mongoose.Types.ObjectId.isValid(planId)) {
+        throw new AppError('Nieprawidłowy format ID planu', 400);
+      }
+
       const plan = await TrainingPlan.findOne({
-        id: planId,
+        _id: planId,
         userId
       });
 

@@ -61,6 +61,22 @@ const runningFormSchema = new mongoose.Schema({
     min: [1, 'Minimum 1 dzień treningowy'],
     max: [7, 'Maksimum 7 dni treningowych']
   },
+  planDuration: {
+    type: mongoose.Schema.Types.Mixed,
+    required: [true, 'Czas trwania planu jest wymagany'],
+    validate: {
+      validator: function(v) {
+        // Konwersja na liczbę jeśli to string
+        const num = typeof v === 'string' ? parseInt(v, 10) : v;
+        return !isNaN(num) && Number.isInteger(num) && num >= 4 && num <= 52;
+      },
+      message: 'Czas trwania planu musi być liczbą całkowitą od 4 do 52 tygodni'
+    },
+    set: function(v) {
+      // Konwersja na liczbę przy zapisie
+      return typeof v === 'string' ? parseInt(v, 10) : v;
+    }
+  },
 
   // Sekcja II - Poziom Wytrenowania i Parametry Fizjologiczne (opcjonalne)
   cooperTestDistance: {

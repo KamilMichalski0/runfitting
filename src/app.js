@@ -31,6 +31,12 @@ dotenv.config();
 // Inicjalizacja aplikacji Express
 const app = express();
 
+// Konfiguracja trust proxy
+app.set('trust proxy', true); // Ufaj wszystkim proxy
+// lub bardziej precyzyjna konfiguracja:
+// app.set('trust proxy', 1); // Ufaj tylko pierwszemu proxy
+// app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']); // Ufaj tylko określonym adresom
+
 // Konfiguracja Swagger
 const swaggerOptions = {
   definition: {

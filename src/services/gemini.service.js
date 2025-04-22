@@ -121,9 +121,10 @@ class GeminiService {
   _createPrompt(userData) {
     // Obliczanie indywidualnych stref tętna
     const heartRateZones = this._calculateHeartRateZones(userData);
-
+    console.log("User data:", userData);
+    
     // Przygotowanie danych z formularza
-    const ageInfo = `Wiek: ${userData.age} lat`;
+    const ageInfo = `Wiek: ${userData.age || 'nie podano'} lat`;
     
     // Sekcja I - Informacje biegowe
     const levelMap = {
@@ -144,37 +145,58 @@ class GeminiService {
       'other': userData.customGoal || 'Inny cel (niesprecyzowany)'
     };
     
-    const levelInfo = `Poziom zaawansowania: ${levelMap[userData.experienceLevel] || userData.experienceLevel}`;
-    const goalInfo = `Główny cel: ${goalMap[userData.mainGoal] || userData.mainGoal}`;
+    const levelInfo = `Poziom zaawansowania: ${levelMap[userData.experienceLevel] || userData.experienceLevel || 'nie podano'}`;
+    const goalInfo = `Główny cel: ${goalMap[userData.mainGoal] || userData.mainGoal || 'nie podano'}`;
     
     // Sekcja II - Preferencje treningowe
-    const daysPerWeekInfo = `Preferowana liczba dni treningowych w tygodniu: ${userData.daysPerWeek}`;
-    const preferredDaysInfo = userData.preferredDays && userData.preferredDays.length > 0 
-      ? `Preferowane dni tygodnia: ${userData.preferredDays.join(', ')}`
-      : 'Brak preferencji co do dni tygodnia';
+    const daysPerWeekInfo = `Preferowana liczba dni treningowych w tygodniu: ${userData.trainingDaysPerWeek || 'nie podano'}`;
+    const weeklyKilometersInfo = `Obecny tygodniowy kilometraż: ${userData.weeklyKilometers || 'nie podano'} km`;
     
-    const maxTimeInfo = userData.maxTimePerSession 
-      ? `Maksymalny czas na sesję treningową: ${userData.maxTimePerSession} minut`
-      : 'Brak określonego limitu czasu na sesję treningową';
+    // Konwersja planDuration na liczbę i walidacja
+    const planDuration = parseInt(userData.planDuration, 10);
+    const planDurationInfo = `Planowany czas trwania planu: ${!isNaN(planDuration) && planDuration > 0 ? planDuration : 'nie podano'} tygodni`;
     
-    // Sekcja III - Informacje o kontuzjach i ograniczeniach
-    let injuriesInfo = 'Brak kontuzji i ograniczeń';
-    if (userData.injuries && userData.injuries.length > 0) {
-      injuriesInfo = `Kontuzje/ograniczenia: ${userData.injuries.join(', ')}`;
-      
-      if (userData.injuryDetails) {
-        injuriesInfo += `\nSzczegóły kontuzji: ${userData.injuryDetails}`;
-      }
-      
-      if (userData.painLevel) {
-        injuriesInfo += `\nPoziom bólu (0-10): ${userData.painLevel}`;
-      }
+    // Sekcja III - Informacje o zdrowiu i kontuzjach
+    let healthInfo = [];
+    
+    if (userData.hasInjuries) {
+      healthInfo.push('Użytkownik ma kontuzje');
     }
     
-    // Sekcja IV - Dodatkowe informacje
-    const additionalInfo = userData.additionalInfo 
-      ? `Dodatkowe informacje: ${userData.additionalInfo}`
-      : 'Brak dodatkowych informacji';
+    if (userData.pastInjuries && userData.pastInjuries.length > 0) {
+      healthInfo.push(`Przeszłe kontuzje: ${userData.pastInjuries.join(', ')}`);
+    }
+    
+    if (userData.medicalConditions && userData.medicalConditions.length > 0) {
+      healthInfo.push(`Choroby przewlekłe: ${userData.medicalConditions.join(', ')}`);
+    }
+    
+    if (userData.giIssuesFrequency && userData.giIssuesFrequency !== 'never') {
+      healthInfo.push(`Częstotliwość problemów żołądkowych: ${userData.giIssuesFrequency}`);
+    }
+    
+    const healthInfoText = healthInfo.length > 0 
+      ? healthInfo.join('\n')
+      : 'Brak zgłoszonych problemów zdrowotnych';
+    
+    // Sekcja IV - Cele i preferencje
+    let goalsInfo = [];
+    
+    if (userData.runningTechniqueGoals && userData.runningTechniqueGoals.length > 0) {
+      goalsInfo.push(`Cele techniczne: ${userData.runningTechniqueGoals.join(', ')}`);
+    }
+    
+    if (userData.dietGoals && userData.dietGoals.length > 0) {
+      goalsInfo.push(`Cele dietetyczne: ${userData.dietGoals.join(', ')}`);
+    }
+    
+    if (userData.dietaryRestrictions && userData.dietaryRestrictions.length > 0) {
+      goalsInfo.push(`Ograniczenia dietetyczne: ${userData.dietaryRestrictions.join(', ')}`);
+    }
+    
+    const goalsInfoText = goalsInfo.length > 0 
+      ? goalsInfo.join('\n')
+      : 'Brak dodatkowych celów i preferencji';
 
     // Pobierz przykładowy szablon planu pasujący do danych użytkownika
     const examplePlan = getExamplePlanTemplate(userData);
@@ -187,10 +209,14 @@ ${ageInfo}
 ${levelInfo}
 ${goalInfo}
 ${daysPerWeekInfo}
-${preferredDaysInfo}
-${maxTimeInfo}
-${injuriesInfo}
-${additionalInfo}
+${weeklyKilometersInfo}
+${planDurationInfo}
+
+### INFORMACJE O ZDROWIU:
+${healthInfoText}
+
+### DODATKOWE CELE I PREFERENCJE:
+${goalsInfoText}
 
 ### STREFY TĘTNA UŻYTKOWNIKA:
 - ${heartRateZones.zone1.name}: min=${heartRateZones.zone1.min}, max=${heartRateZones.zone1.max}
@@ -368,6 +394,15 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
         throw new Error('Nieprawidłowa struktura planu - brakujące wymagane pola');
       }
 
+      // Sprawdzenie czy duration_weeks jest zgodne z planDuration
+      if (this.userData && this.userData.planDuration) {
+        const expectedDuration = parseInt(this.userData.planDuration, 10);
+        if (!isNaN(expectedDuration) && plan.metadata.duration_weeks !== expectedDuration) {
+          console.warn(`duration_weeks (${plan.metadata.duration_weeks}) nie zgadza się z planDuration (${expectedDuration})`);
+          plan.metadata.duration_weeks = expectedDuration;
+        }
+      }
+
       // Mapowanie dni tygodnia
       const defaultDays = ['poniedziałek', 'środa', 'piątek'];
       plan.plan_weeks.forEach((week, weekIndex) => {
@@ -390,10 +425,16 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
   
   /**
    * Tworzy domyślny plan treningowy w przypadku braku odpowiedzi z API
+   * @param {Object} userData - Dane użytkownika
    * @returns {Object} Domyślny plan treningowy
    */
-  _createDefaultTrainingPlan() {
+  _createDefaultTrainingPlan(userData) {
     console.log('Tworzenie domyślnego planu treningowego');
+    
+    // Pobierz planDuration z danych użytkownika lub użyj domyślnej wartości
+    const planDuration = userData && userData.planDuration 
+      ? parseInt(userData.planDuration, 10) 
+      : 8;
     
     return {
       id: `running_plan_default_${Date.now()}`,
@@ -403,7 +444,7 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
         target_goal: "Poprawa ogólnej kondycji",
         level_hint: "początkujący",
         days_per_week: "3",
-        duration_weeks: 8,
+        duration_weeks: planDuration,
         description: "Podstawowy plan biegowy (domyślny) - został wygenerowany awaryjnie",
         author: "RunFitting AI"
       },

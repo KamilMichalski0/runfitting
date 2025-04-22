@@ -169,7 +169,7 @@ router.route('/')
 
 /**
  * @swagger
- * /api/plans/{id}:
+ * /api/plans/{planId}:
  *   get:
  *     summary: Pobranie szczegółów planu treningowego
  *     tags: [Plany Treningowe]
@@ -177,7 +177,7 @@ router.route('/')
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: id
+ *         name: planId
  *         required: true
  *         schema:
  *           type: string
@@ -185,33 +185,21 @@ router.route('/')
  *     responses:
  *       200:
  *         description: Szczegóły planu treningowego
- *       401:
- *         description: Brak uwierzytelnienia
- *       404:
- *         description: Plan treningowy nie znaleziony
- *   put:
- *     summary: Aktualizacja planu treningowego
- *     tags: [Plany Treningowe]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID planu treningowego
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/Plan'
- *     responses:
- *       200:
- *         description: Plan treningowy zaktualizowany pomyślnie
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     plan:
+ *                       $ref: '#/components/schemas/Plan'
  *       400:
- *         description: Nieprawidłowe dane wejściowe
+ *         description: Nieprawidłowy format ID planu
  *       401:
  *         description: Brak uwierzytelnienia
  *       404:
@@ -223,22 +211,23 @@ router.route('/')
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: id
+ *         name: planId
  *         required: true
  *         schema:
  *           type: string
  *         description: ID planu treningowego
  *     responses:
  *       204:
- *         description: Plan treningowy usunięty pomyślnie
+ *         description: Plan został usunięty
+ *       400:
+ *         description: Nieprawidłowy format ID planu
  *       401:
  *         description: Brak uwierzytelnienia
  *       404:
  *         description: Plan treningowy nie znaleziony
  */
-router.route('/:id')
+router.route('/:planId')
   .get(trainingPlanController.getPlanDetails)
-  .put(planValidators.updatePlan, trainingPlanController.updateProgress)
   .delete(trainingPlanController.deletePlan);
 
 /**
