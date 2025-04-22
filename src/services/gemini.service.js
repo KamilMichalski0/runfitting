@@ -277,8 +277,29 @@ ${examplePlanJson}
         }
       ]
     }
+  ],
+  "notes": [
+    string (spersonalizowane notatki dla użytkownika, uwzględniające jego poziom zaawansowania, cele i ograniczenia)
   ]
 }
+
+### INSTRUKCJE DOTYCZĄCE NOTATEK:
+1. Wygeneruj 5-7 spersonalizowanych notatek dla użytkownika
+2. Notatki powinny być konkretne i praktyczne
+3. Uwzględnij:
+   - Wskazówki dotyczące regeneracji
+   - Porady dotyczące monitorowania postępów
+   - Wskazówki dotyczące techniki biegu
+   - Porady dotyczące odżywiania i nawodnienia
+   - Wskazówki dotyczące zapobiegania kontuzjom
+   - Specjalne uwagi wynikające z indywidualnych cech użytkownika
+4. Notatki powinny być dostosowane do:
+   - Poziomu zaawansowania użytkownika
+   - Jego celów treningowych
+   - Ewentualnych kontuzji lub ograniczeń
+   - Częstotliwości treningów
+5. Używaj prostego, zrozumiałego języka
+6. Każda notatka powinna być konkretna i możliwa do wykonania
 
 KRYTYCZNE WYMAGANIA:
 1. Pole day_name MUSI zawierać DOKŁADNIE jedną z wartości: "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"
