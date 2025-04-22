@@ -1,0 +1,26 @@
+# Ignore git related files
+.git
+.gitignore
+
+# Ignore node_modules, Docker will handle dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Ignore environment files - should be injected at runtime
+.env
+.env.*
+*.env
+
+# Ignore Docker related files if necessary
+Dockerfile
+docker-compose.yml
+
+# Ignore IDE/editor specific files
+.vscode
+.idea
+
+# Ignore test reports or build outputs if generated locally
+coverage
+build
+dist
