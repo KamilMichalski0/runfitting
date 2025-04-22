@@ -121,6 +121,13 @@ class GeminiService {
   _createPrompt(userData) {
     // Obliczanie indywidualnych stref tętna
     const heartRateZones = this._calculateHeartRateZones(userData);
+    
+    // Obliczanie tempa na podstawie testu Coopera, jeśli dostępne
+    let trainingPaces = null;
+    if (userData.cooperTestDistance) {
+      trainingPaces = this._calculateTrainingPaces(userData.cooperTestDistance);
+    }
+    
     console.log("User data:", userData);
     
     // Przygotowanie danych z formularza
@@ -202,6 +209,17 @@ class GeminiService {
     const examplePlan = getExamplePlanTemplate(userData);
     const examplePlanJson = JSON.stringify(examplePlan, null, 2);
 
+    let cooperTestInfo = '';
+    if (trainingPaces) {
+      cooperTestInfo = `
+
+### TEMPA TRENINGOWE (na podstawie testu Coopera):
+- Tempo progowe: ${trainingPaces.threshold.min}:${trainingPaces.threshold.sec.toString().padStart(2, '0')} min/km
+- Tempo maratońskie: ${trainingPaces.marathon.min}:${trainingPaces.marathon.sec.toString().padStart(2, '0')} min/km
+- Tempo interwałowe: ${trainingPaces.interval.min}:${trainingPaces.interval.sec.toString().padStart(2, '0')} min/km
+- Tempo regeneracyjne: ${trainingPaces.recovery.min}:${trainingPaces.recovery.sec.toString().padStart(2, '0')} min/km`;
+    }
+
     return `Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Stwórz spersonalizowany plan treningowy na podstawie poniższych informacji o użytkowniku.
 
 ### DANE UŻYTKOWNIKA:
@@ -224,6 +242,8 @@ ${goalsInfoText}
 - ${heartRateZones.zone3.name}: min=${heartRateZones.zone3.min}, max=${heartRateZones.zone3.max}
 - ${heartRateZones.zone4.name}: min=${heartRateZones.zone4.min}, max=${heartRateZones.zone4.max}
 - ${heartRateZones.zone5.name}: min=${heartRateZones.zone5.min}, max=${heartRateZones.zone5.max}
+
+${cooperTestInfo}
 
 ### WYMAGANA STRUKTURA ODPOWIEDZI:
 Plan musi być zwrócony w następującym formacie JSON.
@@ -326,7 +346,7 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
       maxHR = userData.maxHeartRate.value;
     } else {
       // W przeciwnym razie obliczamy według wzoru Tanaki
-      maxHR = 208 - (0.7 * userData.age);
+      maxHR = Math.round(208 - (0.7 * userData.age)); // Round calculated maxHR
     }
 
     // Obliczanie tętna spoczynkowego
@@ -360,7 +380,48 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
       zone5: {
         name: "Strefa 5 (Interwały)",
         min: Math.round(restingHR + (hrr * 0.9)),
-        max: maxHR
+        max: Math.round(maxHR) // Ensure maxHR is rounded here too, in case it came from userData
+      }
+    };
+  }
+
+  /**
+   * Oblicza tempa treningowe na podstawie testu Coopera
+   * @param {number} cooperTestDistance - Dystans w metrach pokonany w teście Coopera (12 minut)
+   * @returns {Object} Obiekt zawierający tempa treningowe w minutach na kilometr
+   */
+  _calculateTrainingPaces(cooperTestDistance) {
+    // Obliczanie VO2max na podstawie testu Coopera (wzór: VO2max = (dystans w metrach - 504.9) / 44.73)
+    const vo2max = (cooperTestDistance - 504.9) / 44.73;
+
+    // Obliczanie tempa progowego (tempo na progu mleczanowym)
+    const thresholdPace = 3600 / (vo2max * 0.85); // 3600 sekund w godzinie
+
+    // Obliczanie tempa maratońskiego (tempo, które można utrzymać przez maraton)
+    const marathonPace = 3600 / (vo2max * 0.75);
+
+    // Obliczanie tempa interwałowego (tempo na 5km)
+    const intervalPace = 3600 / (vo2max * 0.95);
+
+    // Obliczanie tempa regeneracyjnego (tempo na długie wybiegania)
+    const recoveryPace = 3600 / (vo2max * 0.65);
+
+    return {
+      threshold: {
+        min: Math.floor(thresholdPace / 60),
+        sec: Math.round((thresholdPace % 60))
+      },
+      marathon: {
+        min: Math.floor(marathonPace / 60),
+        sec: Math.round((marathonPace % 60))
+      },
+      interval: {
+        min: Math.floor(intervalPace / 60),
+        sec: Math.round((intervalPace % 60))
+      },
+      recovery: {
+        min: Math.floor(recoveryPace / 60),
+        sec: Math.round((recoveryPace % 60))
       }
     };
   }

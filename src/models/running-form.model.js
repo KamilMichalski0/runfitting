@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 /**
  * Schema formularza biegowego
  */
+
+
+//TODO: dodac mozliwosc wyznaczenia daty startu planu i daty celu
 const runningFormSchema = new mongoose.Schema({
   // Sekcja 0 - Dane podstawowe (wymagane)
   firstName: {
