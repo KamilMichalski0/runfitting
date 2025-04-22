@@ -134,7 +134,8 @@ class TrainingPlanController {
         status: 'success',
         data: {
           plan: trainingPlan,
-          formId: runningForm._id
+          formId: runningForm._id,
+          planId: trainingPlan.id
         }
       });
     } catch (error) {
@@ -843,6 +844,7 @@ class TrainingPlanController {
         status: 'success',
         data: {
           planId: trainingPlan._id,
+          treningId: trainingPlan.id,
           message: 'Plan treningowy został zregenerowany pomyślnie'
         }
       });
