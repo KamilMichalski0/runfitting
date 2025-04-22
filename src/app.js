@@ -22,8 +22,11 @@ const globalErrorHandler = require('./middleware/error.middleware');
 const AppError = require('./utils/app-error');
 const supabaseAuth = require('./middleware/supabaseAuth.middleware');
 
+// Import konfiguracji bazy danych
+const { connectDB } = require('./config/database');
+
 // Konfiguracja środowiska
-// dotenv.config();
+dotenv.config();
 
 // Inicjalizacja aplikacji Express
 const app = express();
@@ -62,7 +65,7 @@ app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocs));
 
 // CORS musi być pierwszym middleware
 app.use(cors({
-  origin: 'http://localhost:3001',  // Twój frontend
+  origin: 'http://localhost:3000',  // Twój frontend
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -130,14 +133,7 @@ app.all('*', (req, res, next) => {
 app.use(globalErrorHandler);
 
 // Połączenie z bazą danych MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Połączono z bazą danych MongoDB'))
-  .catch(err => {
-    console.error('Błąd połączenia z bazą danych:');
-    console.error('Treść błędu:', err.message);
-    console.error('MONGODB_URI załadowany:', !!process.env.MONGODB_URI);
-    process.exit(1); // Zatrzymaj aplikację jeśli nie można połączyć się z bazą
-  });
+connectDB();
 
 // Konfiguracja portu i uruchomienie serwera
 const PORT = process.env.PORT || 3000;

@@ -464,6 +464,11 @@ class TrainingPlanController {
       const planId = req.params.id;
       const userId = req.user.sub;
 
+      // Walidacja formatu ObjectId
+      if (!mongoose.Types.ObjectId.isValid(planId)) {
+        throw new AppError('Nieprawidłowy format ID planu', 400);
+      }
+
       const plan = await TrainingPlan.findOneAndDelete({
         _id: planId,
         userId
