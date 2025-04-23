@@ -55,6 +55,10 @@ const swaggerOptions = {
         url: 'http://localhost:3000',
         description: 'Serwer lokalny',
       },
+      {
+        url: 'https://app.znanytrener.ai',
+        description: 'Serwer produkcyjny',
+      }
     ],
   },
   apis: ['./src/routes/*.js'],
@@ -71,17 +75,17 @@ app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocs));
 
 // CORS musi być pierwszym middleware
 app.use(cors({
-  origin: 'http://localhost:3000',  // Twój frontend
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  origin: ['http://localhost:3000', 'https://app.znanytrener.ai'],  // Frontend domains
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Content-Type']
+  credentials: true
 }));
 
 // Dodatkowa konfiguracja nagłówków dla CORS
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Credentials', 'true');
-  if (req.headers.origin === 'http://localhost:3000') {
+  const allowedOrigins = ['http://localhost:3000', 'https://app.znanytrener.ai'];
+  if (allowedOrigins.includes(req.headers.origin)) {
     res.header('Access-Control-Allow-Origin', req.headers.origin);
   }
   next();
