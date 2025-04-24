@@ -3,6 +3,8 @@
  * Implementuje różne metody obliczania i szacowania temp biegowych na różnych dystansach
  */
 
+const AppError = require('../utils/app-error');
+
 /**
  * Konwertuje czas w sekundach na format "mm:ss" lub "h:mm:ss"
  * @param {number} timeInSeconds - Czas w sekundach
@@ -32,14 +34,14 @@ const paceToSeconds = (paceString) => {
   
   const parts = paceString.split(':');
   if (parts.length !== 2) {
-    throw new Error('Nieprawidłowy format tempa. Oczekiwany format to "mm:ss".');
+    throw new AppError('Nieprawidłowy format tempa. Oczekiwany format to "mm:ss".', 400);
   }
   
   const minutes = parseInt(parts[0], 10);
   const seconds = parseInt(parts[1], 10);
   
   if (isNaN(minutes) || isNaN(seconds)) {
-    throw new Error('Nieprawidłowa wartość liczbowa w tempie.');
+    throw new AppError('Nieprawidłowa wartość liczbowa w tempie.', 400);
   }
   
   return minutes * 60 + seconds;
@@ -69,11 +71,11 @@ const secondsToPace = (paceInSeconds) => {
 const calculateVDOT = (distance, timeInSeconds) => {
   // Walidacja danych wejściowych
   if (!distance || distance <= 0) {
-    throw new Error('Nieprawidłowa wartość dystansu.');
+    throw new AppError('Nieprawidłowa wartość dystansu.', 400);
   }
   
   if (!timeInSeconds || timeInSeconds <= 0) {
-    throw new Error('Nieprawidłowa wartość czasu.');
+    throw new AppError('Nieprawidłowa wartość czasu.', 400);
   }
   
   // Prędkość w m/s
@@ -103,7 +105,7 @@ const calculateVDOT = (distance, timeInSeconds) => {
 const calculateTrainingPaces = (vdot) => {
   // Walidacja danych wejściowych
   if (!vdot || vdot < 30 || vdot > 85) {
-    throw new Error('Nieprawidłowa wartość VDOT. Wartość musi mieścić się w zakresie 30-85.');
+    throw new AppError('Nieprawidłowa wartość VDOT. Wartość musi mieścić się w zakresie 30-85.', 400);
   }
   
   // Przybliżone formuły dla temp treningowych na podstawie VDOT
@@ -163,15 +165,15 @@ const calculateTrainingPaces = (vdot) => {
 const predictTimeForDistance = (knownDistance, knownTimeInSeconds, targetDistance) => {
   // Walidacja danych wejściowych
   if (!knownDistance || knownDistance <= 0) {
-    throw new Error('Nieprawidłowa wartość znanego dystansu.');
+    throw new AppError('Nieprawidłowa wartość znanego dystansu.', 400);
   }
   
   if (!knownTimeInSeconds || knownTimeInSeconds <= 0) {
-    throw new Error('Nieprawidłowa wartość znanego czasu.');
+    throw new AppError('Nieprawidłowa wartość znanego czasu.', 400);
   }
   
   if (!targetDistance || targetDistance <= 0) {
-    throw new Error('Nieprawidłowa wartość docelowego dystansu.');
+    throw new AppError('Nieprawidłowa wartość docelowego dystansu.', 400);
   }
   
   // Obliczenie VDOT
@@ -221,7 +223,7 @@ const predictTimeForDistance = (knownDistance, knownTimeInSeconds, targetDistanc
 const generateRacePaces = (personalBests) => {
   // Walidacja danych wejściowych
   if (!personalBests || Object.keys(personalBests).length === 0) {
-    throw new Error('Brak danych o rekordach życiowych.');
+    throw new AppError('Brak danych o rekordach życiowych.', 400);
   }
   
   // Znajduje najlepszy dostępny wynik do wyliczenia VDOT
@@ -249,7 +251,7 @@ const generateRacePaces = (personalBests) => {
   }
   
   if (bestDistance === 0 || bestTime === 0) {
-    throw new Error('Brak ważnych danych o rekordach życiowych.');
+    throw new AppError('Brak ważnych danych o rekordach życiowych.', 400);
   }
   
   // Oblicza VDOT na podstawie najlepszego wyniku
@@ -310,7 +312,7 @@ const generateRacePaces = (personalBests) => {
  */
 const getTargetPaceForWorkout = (paces, workoutType) => {
   if (!paces || !paces.trainingPaces) {
-    throw new Error('Tempa treningowe nie zostały zdefiniowane.');
+    throw new AppError('Tempa treningowe nie zostały zdefiniowane.', 400);
   }
   
   const { trainingPaces } = paces;

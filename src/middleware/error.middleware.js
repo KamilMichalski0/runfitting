@@ -47,7 +47,18 @@ const handleJWTExpiredError = () => {
  * @param {Object} res - Obiekt odpowiedzi Express
  */
 const sendErrorDev = (err, res) => {
-  res.status(err.statusCode).json(err.toJSON());
+  // Sprawdź, czy err ma metodę toJSON
+  if (typeof err.toJSON === 'function') {
+    res.status(err.statusCode).json(err.toJSON());
+  } else {
+    // Jeśli nie, utwórz własną odpowiedź
+    res.status(err.statusCode || 500).json({
+      success: false,
+      status: err.status || 'error',
+      message: err.message || 'Nieznany błąd',
+      stack: err.stack
+    });
+  }
 };
 
 /**
@@ -100,6 +111,22 @@ module.exports = (err, req, res, next) => {
     if (error.name === 'ValidationError') error = handleValidationError(error);
     if (error.name === 'JsonWebTokenError') error = handleJWTError();
     if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
+    
+    // Sprawdź, czy error jest instancją AppError (ma metodę toJSON)
+    if (typeof error.toJSON !== 'function') {
+      // Jeśli nie, konwertuj go na format odpowiedzi produkcyjnej
+      const isOperational = error.name === 'ValidationError' || 
+                          error.code === 11000 || 
+                          error.name === 'JsonWebTokenError' || 
+                          error.name === 'TokenExpiredError';
+      
+      error = {
+        statusCode: error.statusCode || 500,
+        status: error.status || 'error',
+        message: error.message || 'Coś poszło nie tak!',
+        isOperational: isOperational
+      };
+    }
     
     sendErrorProd(error, res);
   }

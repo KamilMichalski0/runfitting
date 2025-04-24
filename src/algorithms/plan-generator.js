@@ -5,6 +5,7 @@
 
 const heartRateCalculator = require('./heart-rate-calculator');
 const paceCalculator = require('./pace-calculator');
+const AppError = require('../utils/app-error');
 
 /**
  * Określa poziom zaawansowania biegacza na podstawie danych treningowych
@@ -71,7 +72,7 @@ const selectPlanTemplate = (goalType, level) => {
   };
   
   if (!templates[goalType] || !templates[goalType][level]) {
-    throw new Error(`Nie znaleziono odpowiedniego szablonu dla celu ${goalType} i poziomu ${level}`);
+    throw new AppError(`Nie znaleziono odpowiedniego szablonu dla celu ${goalType} i poziomu ${level}`, 400);
   }
   
   return templates[goalType][level];
@@ -86,7 +87,7 @@ const selectPlanTemplate = (goalType, level) => {
  */
 const calculatePlanDates = (targetDate, goalType, level) => {
   if (!targetDate) {
-    throw new Error('Data docelowa jest wymagana');
+    throw new AppError('Data docelowa jest wymagana', 400);
   }
   
   // Mapowanie liczby tygodni planów
@@ -210,7 +211,7 @@ const generateWeeklyPlan = (level, goalType, weeklyDistance = 0) => {
  */
 const calculateTrainingPaces = (user) => {
   if (!user || !user.trainingHistory || !user.trainingHistory.personalBests) {
-    throw new Error('Brak wystarczających danych o użytkowniku do obliczenia temp treningowych');
+    throw new AppError('Brak wystarczających danych o użytkowniku do obliczenia temp treningowych', 400);
   }
   
   const { personalBests } = user.trainingHistory;
@@ -284,7 +285,7 @@ const estimatePacesByLevel = (level) => {
  */
 const generateTrainingPlan = (user, goal) => {
   if (!user || !goal) {
-    throw new Error('Brak wymaganych danych użytkownika lub celu treningowego');
+    throw new AppError('Brak wymaganych danych użytkownika lub celu treningowego', 400);
   }
   
   // Określenie poziomu zaawansowania
