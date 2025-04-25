@@ -4,136 +4,188 @@ const AppError = require('../utils/app-error');
 const { getExamplePlanTemplate } = require('../templates/plan-template-selector');
 
 class GeminiService {
-  constructor() {
+  constructor(knowledgeBase) {
+    // Load config
     this.apiKey = config.apiKey;
-    this.apiUrl = 'https://generativelanguage.googleapis.com';
     this.model = config.model;
-    this.axiosClient = axios.create({
-      baseURL: this.apiUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
+    this.apiUrl = config.apiUrl; // Assign directly
+
+    // Build generationConfig object from flat config
+    this.generationConfig = {
+      temperature: config.temperature,
+      topK: config.topK,
+      topP: config.topP,
+      maxOutputTokens: config.maxTokens, // Map maxTokens to maxOutputTokens
+      responseMimeType: 'application/json',
+    };
+
+    // Check API key
+    if (!this.apiKey) {
+      console.warn('⚠️  WARNING: GEMINI_API_KEY is not set. GeminiService will use fallback responses.');
+    }
+
+    // Initialize Axios
+    this.axiosClient = axios.create();
+
+    // Inject dependency
+    if (!knowledgeBase) {
+      throw new Error('Knowledge base dependency is required for GeminiService.');
+    }
+    this.knowledgeBase = knowledgeBase; // Zapisujemy wstrzykniętą zależność
+
+    // Bind methods
+    this._createPrompt = this._createPrompt.bind(this);
+    this._parseResponse = this._parseResponse.bind(this);
+    this._createDefaultTrainingPlan = this._createDefaultTrainingPlan.bind(this);
+
+    // Remove decorator calls
+    this.generateTrainingPlan = this.generateTrainingPlan.bind(this);
+    this.log = this.log.bind(this); 
+    this.error = this.error.bind(this); 
   }
 
-  /**
-   * Generuje plan treningowy przy użyciu Gemini API
-   * @param {Object} userData - Dane użytkownika
-   * @returns {Promise<Object>} Wygenerowany plan treningowy
-   */
-  async generateTrainingPlan(userData) {
-    try {
-      console.log('\n=== ROZPOCZĘCIE GENEROWANIA PLANU TRENINGOWEGO ===');
-      console.log('1. Dane wejściowe użytkownika:', JSON.stringify(userData, null, 2));
+  // Method for standardized logging within the service
+  log(message, data) {
+    console.log(message, data !== undefined ? data : '');
+  }
 
-      console.log('\n2. Tworzenie promptu...');
+  // Method for standardized error logging within the service
+  error(message, errorData) {
+    console.error(message, errorData !== undefined ? errorData : '');
+  }
+
+  async generateTrainingPlan(userData) {
+    this.log('\n=== ROZPOCZĘCIE GENEROWANIA PLANU TRENINGOWEGO ===');
+    this.log('1. Dane wejściowe użytkownika:', userData);
+
+    if (!this.apiKey) {
+      console.warn('API Key not found, returning default plan.');
+      return this._createDefaultTrainingPlan(userData);
+    }
+
+    try {
+      this.log('\n2. Tworzenie promptu...');
       const prompt = this._createPrompt(userData);
-      console.log('Wygenerowany prompt:', prompt);
-      
-      // Wywołanie API zgodnie z najnowszą dokumentacją Gemini dla modelu 2.5
-      const url = `/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
-      
-      console.log('\n3. Konfiguracja żądania do Gemini API:');
-      console.log(`- Model: ${this.model}`);
-      console.log(`- URL: ${this.apiUrl}${url}`);
-      
-      // Poprawiona struktura żądania zgodnie z dokumentacją Gemini 2.5
+      this.log('Wygenerowany prompt:', prompt); // Log the generated prompt
+
+      const requestUrl = `${this.apiUrl}/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+
+      this.log('\n3. Konfiguracja żądania do Gemini API:');
+      this.log(`- Model: ${this.model}`);
+      this.log(`- URL: ${requestUrl}`);
+
       const requestBody = {
         contents: [
           {
-            role: "user",
+            role: 'user',
             parts: [
               {
-                text: prompt
-              }
-            ]
-          }
+                text: prompt,
+              },
+            ],
+          },
         ],
-        generationConfig: {
-          temperature: config.temperature,
-          topK: config.topK,
-          topP: config.topP,
-          maxOutputTokens: config.maxTokens,
-          responseMimeType: "application/json"
-        },
+        // Use the constructed generationConfig object
+        generationConfig: this.generationConfig,
         safetySettings: [
           {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_ONLY_HIGH"
+            category: 'HARM_CATEGORY_HARASSMENT',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
           },
           {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_ONLY_HIGH"
+            category: 'HARM_CATEGORY_HATE_SPEECH',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
           },
           {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_ONLY_HIGH"
+            category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
           },
           {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_ONLY_HIGH"
-          }
-        ]
+            category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+          },
+        ],
       };
-      
-      console.log('\n4. Konfiguracja generowania:');
-      console.log('- Temperature:', config.temperature);
-      console.log('- TopK:', config.topK);
-      console.log('- TopP:', config.topP);
-      console.log('- MaxTokens:', config.maxTokens);
-      
-      console.log('\n5. Wysyłanie żądania do API...');
-      console.log('Request body:', JSON.stringify(requestBody, null, 2));
-      
-      const response = await this.axiosClient.post(url, requestBody);
 
-      console.log('\n6. Otrzymano odpowiedź z API:');
-      console.log(`- Status: ${response.status}`);
-      console.log('- Headers:', JSON.stringify(response.headers, null, 2));
-      console.log('- Pełna odpowiedź:', JSON.stringify(response.data, null, 2));
-      
-      console.log('\n7. Parsowanie odpowiedzi...');
+      this.log('\n4. Konfiguracja generowania:');
+      this.log(`- Temperature: ${this.generationConfig.temperature}`);
+      this.log(`- TopK: ${this.generationConfig.topK}`);
+      this.log(`- TopP: ${this.generationConfig.topP}`);
+      this.log(`- MaxTokens: ${this.generationConfig.maxOutputTokens}`);
+
+      this.log('\n5. Wysyłanie żądania do API...');
+      this.log('Request body:', requestBody);
+
+      const response = await this.axiosClient.post(requestUrl, requestBody);
+
+      this.log('\n6. Otrzymano odpowiedź z API:');
+      this.log(`   Status: ${response.status}`);
+      // this.log(`   Data:`, response.data); // Avoid logging potentially huge data
+
+      this.log('\n7. Parsowanie odpowiedzi...');
       const parsedPlan = this._parseResponse(response.data);
-      
-      console.log('\n8. Plan po sparsowaniu:');
-      console.log('- ID planu:', parsedPlan.id);
-      console.log('- Liczba tygodni:', parsedPlan.plan_weeks.length);
-      console.log('- Metadane:', JSON.stringify(parsedPlan.metadata, null, 2));
-      console.log('- Przykładowy tydzień:', JSON.stringify(parsedPlan.plan_weeks[0], null, 2));
-      
-      console.log('\n=== ZAKOŃCZONO GENEROWANIE PLANU TRENINGOWEGO ===\n');
-      
+
+      if (!parsedPlan) {
+        console.error('\n!!! Nie udało się sparsować odpowiedzi API, zwracanie planu domyślnego !!!');
+        return this._createDefaultTrainingPlan(userData);
+      }
+
+      // Add user-specific data not generated by the API
+      parsedPlan.metadata = {
+        ...parsedPlan.metadata,
+        target_group: userData.experienceLevel,
+        target_goal: userData.mainGoal,
+        level_hint: this.knowledgeBase.getExperienceLevelDescription(userData.experienceLevel),
+        days_per_week: userData.weeklyAvailability?.days?.length?.toString() || 'nie podano',
+      };
+      parsedPlan.user_id = userData.user_id; // Assuming user_id is passed in userData
+
+      this.log('\n8. Zwracanie wygenerowanego planu.');
+      // console.log('Final Plan:', JSON.stringify(parsedPlan, null, 2));
       return parsedPlan;
     } catch (error) {
-      console.error('\n!!! BŁĄD PODCZAS GENEROWANIA PLANU !!!');
-      console.error('Szczegóły błędu:', error);
-      console.error('Response data:', error.response?.data);
+      // Logowanie szczegółowego błędu za pomocą console.error
+      console.error(`Błąd podczas generowania planu treningowego: ${error.message}`);
+      if (error.response) {
+        console.error('Odpowiedź błędu API:', JSON.stringify(error.response.data, null, 2));
+      }
       console.error('Stack trace:', error.stack);
-      throw new AppError('Nie udało się wygenerować planu treningowego: ' + (error.response?.data?.error?.message || error.message), 500);
+      throw new AppError(`Nie udało się wygenerować planu treningowego: ${(error.response?.data?.error?.message || error.message)}`, 500);
     }
   }
 
-  /**
-   * Tworzy prompt dla Gemini API
-   * @param {Object} userData - Dane użytkownika
-   * @returns {String} Sformatowany prompt
-   */
   _createPrompt(userData) {
-    // Obliczanie indywidualnych stref tętna
+    // Definicja funkcji safeGet na początku metody
+    const safeGet = (obj, path, defaultValue = 'nie określono') => {
+      try {
+        const value = path.split('.').reduce((o, i) => o[i], obj);
+        return value || defaultValue;
+      } catch (e) {
+        return defaultValue;
+      }
+    };
+    
     const heartRateZones = this._calculateHeartRateZones(userData);
     
-    // Obliczanie tempa na podstawie testu Coopera, jeśli dostępne
     let trainingPaces = null;
     if (userData.cooperTestDistance) {
       trainingPaces = this._calculateTrainingPaces(userData.cooperTestDistance);
     }
     
-    console.log("User data:", userData);
-    
-    // Przygotowanie danych z formularza
+    const goalToKnowledgeMap = {
+      'general_fitness': 'general_fitness',
+      'run_5k': '5k',
+      'run_10k': '10k',
+      'half_marathon': 'halfMarathon',
+      'marathon': 'marathon',
+      'ultra_marathon': 'ultraMarathon',
+      'speed_improvement': 'general_fitness',
+      'endurance_improvement': 'general_fitness',
+      'other': 'general_fitness'
+    };
+
     const ageInfo = `Wiek: ${userData.age || 'nie podano'} lat`;
     
-    // Sekcja I - Informacje biegowe
     const levelMap = {
       'beginner': 'Początkujący (biegam nieregularnie, zaczynam przygodę z bieganiem)',
       'intermediate': 'Średniozaawansowany (biegam regularnie od kilku miesięcy/lat)',
@@ -155,15 +207,12 @@ class GeminiService {
     const levelInfo = `Poziom zaawansowania: ${levelMap[userData.experienceLevel] || userData.experienceLevel || 'nie podano'}`;
     const goalInfo = `Główny cel: ${goalMap[userData.mainGoal] || userData.mainGoal || 'nie podano'}`;
     
-    // Sekcja II - Preferencje treningowe
     const daysPerWeekInfo = `Preferowana liczba dni treningowych w tygodniu: ${userData.trainingDaysPerWeek || 'nie podano'}`;
     const weeklyKilometersInfo = `Obecny tygodniowy kilometraż: ${userData.weeklyKilometers || 'nie podano'} km`;
     
-    // Konwersja planDuration na liczbę i walidacja
     const planDuration = parseInt(userData.planDuration, 10);
     const planDurationInfo = `Planowany czas trwania planu: ${!isNaN(planDuration) && planDuration > 0 ? planDuration : 'nie podano'} tygodni`;
     
-    // Sekcja III - Informacje o zdrowiu i kontuzjach
     let healthInfo = [];
     
     if (userData.hasInjuries) {
@@ -186,7 +235,6 @@ class GeminiService {
       ? healthInfo.join('\n')
       : 'Brak zgłoszonych problemów zdrowotnych';
     
-    // Sekcja IV - Cele i preferencje
     let goalsInfo = [];
     
     if (userData.runningTechniqueGoals && userData.runningTechniqueGoals.length > 0) {
@@ -205,9 +253,18 @@ class GeminiService {
       ? goalsInfo.join('\n')
       : 'Brak dodatkowych celów i preferencji';
 
-    // Pobierz przykładowy szablon planu pasujący do danych użytkownika
     const examplePlan = getExamplePlanTemplate(userData);
-    const examplePlanJson = JSON.stringify(examplePlan, null, 2);
+    let examplePlanSection = ''; // Domyślnie pusta sekcja
+    if (examplePlan) {
+      try {
+        const examplePlanJson = JSON.stringify(examplePlan, null, 2);
+        examplePlanSection = `\n### PRZYKŁAD PLANU:\n${examplePlanJson}`;
+      } catch (error) {
+        console.error("Błąd podczas serializacji przykładowego planu:", error);
+        // Opcjonalnie można dodać notkę o błędzie
+        examplePlanSection = `\n### PRZYKŁAD PLANU:\n(Błąd podczas generowania przykładu)`;
+      }
+    }
 
     let cooperTestInfo = '';
     if (trainingPaces) {
@@ -220,7 +277,52 @@ class GeminiService {
 - Tempo regeneracyjne: ${trainingPaces.recovery.min}:${trainingPaces.recovery.sec.toString().padStart(2, '0')} min/km`;
     }
 
-    return `Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Stwórz spersonalizowany plan treningowy na podstawie poniższych informacji o użytkowniku.
+    const targetDistance = goalToKnowledgeMap[userData.mainGoal] || 'general_fitness';
+    const distanceKnowledge = safeGet(this.knowledgeBase, `distances.${targetDistance}`, {}); 
+    const userLevel = userData.experienceLevel || 'beginner';
+
+    const knowledgeBaseInfo = `
+### BAZA WIEDZY DLA DYSTANSU ${targetDistance.toUpperCase()}:
+- Fokus treningowy: ${safeGet(distanceKnowledge, 'focus', []).join(', ')}
+- Kluczowe typy treningów: ${safeGet(distanceKnowledge, 'keyTrainingTypes', []).join(', ')}
+- Typowa długość planu: ${safeGet(distanceKnowledge, `typicalPlanLength.${userLevel}`, '8-12 tygodni')}
+- Tapering: ${safeGet(distanceKnowledge, 'tapering.duration', '7-10 dni')} (redukcja objętości: ${safeGet(distanceKnowledge, 'tapering.volumeReduction', '20-50%')})
+- Emfaza treningowa dla poziomu ${userLevel}: ${safeGet(distanceKnowledge, `trainingEmphasis.${userLevel}`, []).join(', ')}
+
+### ZASADY TRENINGOWE:
+${Object.entries(safeGet(this.knowledgeBase, 'principles', {})).map(([key, value]) => `
+- ${safeGet(value, 'description', key)}:
+  * ${safeGet(value, 'explanation', 'brak wyjaśnienia')}
+  * Zastosowanie: ${safeGet(value, 'application', []).join(', ')}
+`).join('\n')}
+
+### FAZY TRENINGOWE:
+${Object.entries(safeGet(this.knowledgeBase, 'phases', {})).map(([key, value]) => `
+- Faza ${key}:
+  * Fokus: ${safeGet(value, 'focus', []).join(', ')}
+  * Czas trwania: ${safeGet(value, 'duration', 'nie określono')}
+  * Komponenty: ${safeGet(value, 'keyComponents', []).join(', ')}
+  * Progresja: ${safeGet(value, 'progression', []).join(', ')}
+`).join('\n')}
+
+### ZAPOBIEGANIE KONTUZJOM:
+${Object.entries(safeGet(this.knowledgeBase, 'injuryPrevention.commonInjuries', {})).map(([key, value]) => `
+- ${key}:
+  * Opis: ${safeGet(value, 'description', 'brak opisu')}
+  * Zapobieganie: ${safeGet(value, 'prevention', []).join(', ')}
+`).join('\n')}
+
+### ZALECENIA ŻYWIENIOWE:
+- Przed treningiem: ${safeGet(safeGet(this.knowledgeBase, 'nutrition', {}), 'preRun.guidelines', []).join(', ')}
+- Podczas treningu: ${safeGet(safeGet(this.knowledgeBase, 'nutrition', {}), 'duringRun.guidelines', []).join(', ')}
+- Po treningu: ${safeGet(safeGet(this.knowledgeBase, 'nutrition', {}), 'postRun.guidelines', []).join(', ')}
+
+### ZALECENIA NAWODNIENIA:
+- Przed treningiem: ${safeGet(safeGet(this.knowledgeBase, 'hydration', {}), 'preRun.guidelines', []).join(', ')}
+- Podczas treningu: ${safeGet(safeGet(this.knowledgeBase, 'hydration', {}), 'duringRun.guidelines', []).join(', ')}
+- Po treningu: ${safeGet(safeGet(this.knowledgeBase, 'hydration', {}), 'postRun.guidelines', []).join(', ')}`;
+
+    return `Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Stwórz spersonalizowany plan treningowy na podstawie poniższych informacji o użytkowniku i dostępnej bazie wiedzy.
 
 ### DANE UŻYTKOWNIKA:
 ${ageInfo}
@@ -245,11 +347,10 @@ ${goalsInfoText}
 
 ${cooperTestInfo}
 
-### WYMAGANA STRUKTURA ODPOWIEDZI:
-Plan musi być zwrócony w następującym formacie JSON.
+${knowledgeBaseInfo}
 
-### PRZYKŁAD PLANU:
-${examplePlanJson}
+### WYMAGANA STRUKTURA ODPOWIEDZI:
+Plan musi być zwrócony w następującym formacie JSON.${examplePlanSection}
 
 ### SCHEMAT JSON:
 {
@@ -334,28 +435,25 @@ KRYTYCZNE WYMAGANIA:
 10. Dodaj wskazówki dotyczące monitorowania bólu, jeśli użytkownik zgłasza kontuzje
 11. Uwzględnij ćwiczenia korekcyjne/uzupełniające, jeśli są potrzebne
 12. ZAWSZE używaj stref tętna z sekcji "STREFY TĘTNA UŻYTKOWNIKA" - są one obliczone indywidualnie dla tego użytkownika
+13. Wykorzystaj wiedzę z bazy wiedzy do stworzenia optymalnego planu treningowego
+14. Uwzględnij fazy treningowe i zasady progresji z bazy wiedzy
+15. Dostosuj plan do specyficznych wymagań dystansu docelowego
 
-WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON.`;
+WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika i wykorzystujący wiedzę z bazy wiedzy. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON. Nie używaj cudzysłowów w nazwach pól. Nie używaj pola "corrective_exercises". Nie używaj pola "pain_monitoring".`;
   }
 
   _calculateHeartRateZones(userData) {
-    // Obliczanie maksymalnego tętna
     let maxHR;
     if (userData.maxHeartRate?.value && userData.maxHeartRate?.measured) {
-      // Jeśli użytkownik podał zmierzone tętno maksymalne, używamy go
       maxHR = userData.maxHeartRate.value;
     } else {
-      // W przeciwnym razie obliczamy według wzoru Tanaki
-      maxHR = Math.round(208 - (0.7 * userData.age)); // Round calculated maxHR
+      maxHR = Math.round(208 - (0.7 * userData.age)); 
     }
 
-    // Obliczanie tętna spoczynkowego
     const restingHR = userData.restingHeartRate?.known ? userData.restingHeartRate.value : 60;
 
-    // Obliczanie rezerwy tętna (HRR - Heart Rate Reserve)
     const hrr = maxHR - restingHR;
 
-    // Obliczanie stref tętna według metody Karvonena
     return {
       zone1: {
         name: "Strefa 1 (Regeneracja)",
@@ -380,30 +478,20 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
       zone5: {
         name: "Strefa 5 (Interwały)",
         min: Math.round(restingHR + (hrr * 0.9)),
-        max: Math.round(maxHR) // Ensure maxHR is rounded here too, in case it came from userData
+        max: Math.round(maxHR) 
       }
     };
   }
 
-  /**
-   * Oblicza tempa treningowe na podstawie testu Coopera
-   * @param {number} cooperTestDistance - Dystans w metrach pokonany w teście Coopera (12 minut)
-   * @returns {Object} Obiekt zawierający tempa treningowe w minutach na kilometr
-   */
   _calculateTrainingPaces(cooperTestDistance) {
-    // Obliczanie VO2max na podstawie testu Coopera (wzór: VO2max = (dystans w metrach - 504.9) / 44.73)
     const vo2max = (cooperTestDistance - 504.9) / 44.73;
 
-    // Obliczanie tempa progowego (tempo na progu mleczanowym)
-    const thresholdPace = 3600 / (vo2max * 0.85); // 3600 sekund w godzinie
+    const thresholdPace = 3600 / (vo2max * 0.85); 
 
-    // Obliczanie tempa maratońskiego (tempo, które można utrzymać przez maraton)
     const marathonPace = 3600 / (vo2max * 0.75);
 
-    // Obliczanie tempa interwałowego (tempo na 5km)
     const intervalPace = 3600 / (vo2max * 0.95);
 
-    // Obliczanie tempa regeneracyjnego (tempo na długie wybiegania)
     const recoveryPace = 3600 / (vo2max * 0.65);
 
     return {
@@ -426,47 +514,83 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
     };
   }
 
-  /**
-   * Parsuje odpowiedź z Gemini API
-   * @param {Object} response - Odpowiedź z API
-   * @returns {Object} Sformatowany plan treningowy
-   */
-  _parseResponse(response) {
+  _parseResponse(apiResponse) {
     try {
-      // Próba wyodrębnienia JSON z odpowiedzi
+      if (!apiResponse) {
+        console.error('Otrzymano pustą odpowiedź z API');
+        return this._createDefaultTrainingPlan(this.userData);
+      }
+      
       let plan;
       try {
-        const candidates = response.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!candidates) {
-          console.error('Brak kandydatów w odpowiedzi');
-          return this._createDefaultTrainingPlan();
+        if (!apiResponse.candidates || !Array.isArray(apiResponse.candidates) || apiResponse.candidates.length === 0) {
+          console.error('Nieprawidłowa struktura odpowiedzi - brak candidates:', apiResponse);
+          return this._createDefaultTrainingPlan(this.userData);
         }
         
-        // Próba parsowania JSON z odpowiedzi tekstowej
+        const candidate = apiResponse.candidates[0];
+        if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
+          console.error('Nieprawidłowa struktura candidate - brak parts:', candidate);
+          return this._createDefaultTrainingPlan(this.userData);
+        }
+        
+        const textPart = candidate.content.parts[0];
+        if (!textPart.text) {
+          console.error('Brak tekstu w odpowiedzi:', textPart);
+          return this._createDefaultTrainingPlan(this.userData);
+        }
+        
+        const candidates = textPart.text;
+        console.log('Wyodrębniony tekst z odpowiedzi:', candidates);
+        
         try {
+          if (!candidates) {
+            throw new Error('Otrzymano pusty tekst');
+          }
+          
+          if (candidates.trim().startsWith('null') || candidates.trim().startsWith('undefined')) {
+            throw new Error(`Otrzymano nieprawidłową wartość: ${candidates.trim().substring(0, 20)}...`);
+          }
+          
           plan = JSON.parse(candidates);
+          console.log('Pomyślnie sparsowano JSON bezpośrednio');
         } catch (parseError) {
           console.error('Błąd parsowania JSON z odpowiedzi:', parseError);
-          // Próba znalezienia JSON w tekście
+          console.log('Próba znalezienia struktury JSON w tekście...');
+          
           const jsonMatch = candidates.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             try {
-              plan = JSON.parse(jsonMatch[0]);
+              const jsonCandidate = jsonMatch[0];
+              console.log('Znaleziono potencjalny JSON:', jsonCandidate.substring(0, 100) + '...');
+              plan = JSON.parse(jsonCandidate);
+              console.log('Pomyślnie sparsowano wyodrębniony JSON');
             } catch (secondParseError) {
               console.error('Błąd parsowania wyodrębnionego JSON:', secondParseError);
-              return this._createDefaultTrainingPlan();
+              
+              try {
+                let fixedJson = jsonMatch[0];
+                fixedJson = fixedJson.replace(/([\{\[,:]\s*)'([^']*)'(\s*[\}\],:])/g, '$1"$2"$3');
+                fixedJson = fixedJson.replace(/(\{|,)\s*([a-zA-Z0-9_]+)\s*:/g, '$1"$2":');
+                console.log('Próba naprawy JSON:', fixedJson.substring(0, 100) + '...');
+                
+                plan = JSON.parse(fixedJson);
+                console.log('Pomyślnie sparsowano naprawiony JSON');
+              } catch (thirdParseError) {
+                console.error('Nie udało się naprawić JSON:', thirdParseError);
+                return this._createDefaultTrainingPlan(this.userData);
+              }
             }
           } else {
             console.error('Nie znaleziono struktury JSON w odpowiedzi');
-            return this._createDefaultTrainingPlan();
+            return this._createDefaultTrainingPlan(this.userData);
           }
         }
       } catch (error) {
         console.error('Błąd podczas przetwarzania odpowiedzi:', error);
-        return this._createDefaultTrainingPlan();
+        return this._createDefaultTrainingPlan(this.userData);
       }
       
-      // Walidacja podstawowej struktury
       if (!plan.id || !plan.metadata || !plan.plan_weeks) {
         console.error('Brakujące pola w planie:', {
           hasId: !!plan.id,
@@ -476,26 +600,41 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
         throw new Error('Nieprawidłowa struktura planu - brakujące wymagane pola');
       }
 
-      // Sprawdzenie czy duration_weeks jest zgodne z planDuration
       if (this.userData && this.userData.planDuration) {
         const expectedDuration = parseInt(this.userData.planDuration, 10);
-        if (!isNaN(expectedDuration) && plan.metadata.duration_weeks !== expectedDuration) {
-          console.warn(`duration_weeks (${plan.metadata.duration_weeks}) nie zgadza się z planDuration (${expectedDuration})`);
-          plan.metadata.duration_weeks = expectedDuration;
+        if (!isNaN(expectedDuration)) {
+          if (!plan.metadata.duration_weeks) {
+            console.warn(`Brak duration_weeks w planie, ustawiam na ${expectedDuration}`);
+            plan.metadata.duration_weeks = expectedDuration;
+          } else if (plan.metadata.duration_weeks !== expectedDuration) {
+            console.warn(`duration_weeks (${plan.metadata.duration_weeks}) nie zgadza się z planDuration (${expectedDuration})`);
+            plan.metadata.duration_weeks = expectedDuration;
+          }
         }
       }
 
-      // Mapowanie dni tygodnia
       const defaultDays = ['poniedziałek', 'środa', 'piątek'];
+      
+      if (!Array.isArray(plan.plan_weeks)) {
+        console.error('plan_weeks nie jest tablicą:', plan.plan_weeks);
+        plan.plan_weeks = [];
+      }
+      
       plan.plan_weeks.forEach((week, weekIndex) => {
-        if (week.days) {
-          week.days.forEach((day, dayIndex) => {
-            // Jeśli dzień jest w formacie "Dzień X", przypisz domyślny dzień
-            if (day.day_name.startsWith('Dzień')) {
-              day.day_name = defaultDays[dayIndex] || defaultDays[dayIndex % defaultDays.length];
-            }
-          });
+        if (!week.days || !Array.isArray(week.days)) {
+          console.warn(`Brak dni w tygodniu ${weekIndex + 1} lub nie jest tablicą`);
+          week.days = [];
+          return;
         }
+        
+        week.days.forEach((day, dayIndex) => {
+          if (!day.day_name) {
+            console.warn(`Brak nazwy dnia w tygodniu ${weekIndex + 1}, dzień ${dayIndex + 1}`);
+            day.day_name = defaultDays[dayIndex % defaultDays.length];
+          } else if (day.day_name.startsWith('Dzień')) {
+            day.day_name = defaultDays[dayIndex % defaultDays.length];
+          }
+        });
       });
       
       return plan;
@@ -505,28 +644,27 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
     }
   }
   
-  /**
-   * Tworzy domyślny plan treningowy w przypadku braku odpowiedzi z API
-   * @param {Object} userData - Dane użytkownika
-   * @returns {Object} Domyślny plan treningowy
-   */
   _createDefaultTrainingPlan(userData) {
     console.log('Tworzenie domyślnego planu treningowego');
-    
-    // Pobierz planDuration z danych użytkownika lub użyj domyślnej wartości
-    const planDuration = userData && userData.planDuration 
-      ? parseInt(userData.planDuration, 10) 
+    const currentData = userData || this.userData || {}; 
+  
+    const planDuration = currentData && currentData.planDuration 
+      ? parseInt(currentData.planDuration, 10) 
       : 8;
-    
+
+    const levelHint = currentData && currentData.experienceLevel 
+      ? currentData.experienceLevel 
+      : 'nieznany';
+  
     return {
       id: `running_plan_default_${Date.now()}`,
       metadata: {
         discipline: "running",
-        target_group: "Biegacze początkujący",
-        target_goal: "Poprawa ogólnej kondycji",
-        level_hint: "początkujący",
-        days_per_week: "3",
-        duration_weeks: planDuration,
+        target_group: "Biegacze początkujący", 
+        target_goal: "Poprawa ogólnej kondycji", 
+        level_hint: levelHint, 
+        days_per_week: "3", 
+        duration_weeks: planDuration, 
         description: "Podstawowy plan biegowy (domyślny) - został wygenerowany awaryjnie",
         author: "RunFitting AI"
       },
@@ -599,4 +737,4 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
   }
 }
 
-module.exports = new GeminiService(); 
+module.exports = GeminiService;

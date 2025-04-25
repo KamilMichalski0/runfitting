@@ -3,6 +3,7 @@ dotenv.config();
 
 module.exports = {
   apiKey: process.env.GEMINI_API_KEY,
+  apiUrl: 'https://generativelanguage.googleapis.com',
   model: 'gemini-2.5-pro-exp-03-25',
   maxTokens: 100000,
   temperature: 0.1,

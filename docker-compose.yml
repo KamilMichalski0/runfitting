@@ -11,8 +11,5 @@ services:
       - /usr/src/app/node_modules
     env_file:
       - .env # Still load other variables from .env
-    environment:
-      # Override MONGODB_URI for the container to connect to the mongo service
-      MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@wizzard.olubbka.mongodb.net/?retryWrites=true&w=majority&appName=wizzard
     command: npm run dev # Or your development start script
 
