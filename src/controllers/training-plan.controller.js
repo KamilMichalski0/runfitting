@@ -1,6 +1,6 @@
 const TrainingPlan = require('../models/training-plan.model');
 const RunningForm = require('../models/running-form.model');
-const geminiService = require('../services/gemini.service');
+const GeminiService = require('../services/gemini.service');
 const FallbackPlanGeneratorService = require('../services/fallback-plan-generator.service');
 const AppError = require('../utils/app-error');
 const PlanGeneratorService = require('../services/plan-generator.service');
@@ -13,6 +13,7 @@ const fallbackPlanGenerator = new FallbackPlanGeneratorService();
 class TrainingPlanController {
   constructor() {
     this.planGeneratorService = new PlanGeneratorService();
+    this.geminiService = new GeminiService();
   }
 
   /**
@@ -116,7 +117,7 @@ class TrainingPlanController {
       let planData;
       try {
         // Próba wygenerowania planu za pomocą Gemini
-        planData = await geminiService.generateTrainingPlan(processedFormData);
+        planData = await this.geminiService.generateTrainingPlan(processedFormData);
       } catch (error) {
         console.error('Błąd generowania planu przez Gemini:', error);
         // Aktualizacja statusu formularza na błąd
@@ -275,7 +276,7 @@ class TrainingPlanController {
       let planData;
       try {
         // Próba wygenerowania planu za pomocą Gemini
-        planData = await geminiService.generateTrainingPlan(runningForm.toObject());
+        planData = await this.geminiService.generateTrainingPlan(runningForm.toObject());
       } catch (error) {
         console.error('Błąd Gemini:', error);
         // Fallback - wygeneruj plan za pomocą wbudowanego generatora
@@ -719,7 +720,7 @@ class TrainingPlanController {
       let planData;
       try {
         // Próba wygenerowania planu za pomocą Gemini
-        planData = await geminiService.generateTrainingPlan(runningForm.toObject());
+        planData = await this.geminiService.generateTrainingPlan(runningForm.toObject());
       } catch (error) {
         console.error('Błąd Gemini:', error);
         // Fallback - wygeneruj plan za pomocą wbudowanego generatora
@@ -815,7 +816,7 @@ class TrainingPlanController {
       let planData;
       try {
         // Próba wygenerowania planu za pomocą Gemini
-        planData = await geminiService.generateTrainingPlan(runningForm.toObject());
+        planData = await this.geminiService.generateTrainingPlan(runningForm.toObject());
       } catch (error) {
         console.error('Błąd Gemini:', error);
         // Fallback - wygeneruj plan za pomocą wbudowanego generatora
@@ -869,4 +870,4 @@ class TrainingPlanController {
   }
 }
 
-module.exports = new TrainingPlanController(); 
+module.exports = new TrainingPlanController();
