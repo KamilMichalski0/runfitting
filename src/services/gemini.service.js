@@ -1,42 +1,60 @@
 const axios = require('axios');
-const config = require('../config/gemini.config');
+const geminiConfig = require('../config/gemini.config'); 
+const openaiConfig = require('../config/openai.config'); 
+const { OpenAI } = require('openai'); 
 const AppError = require('../utils/app-error');
+const config = require('../config/gemini.config');
 const { getExamplePlanTemplate } = require('../templates/plan-template-selector');
 
 class GeminiService {
   constructor(knowledgeBase) {
-    // Load config
-    this.apiKey = config.apiKey;
-    this.model = config.model;
-    this.apiUrl = config.apiUrl; // Assign directly
+    // Load Gemini config
+    this.geminiApiKey = geminiConfig.apiKey;
+    this.geminiModel = geminiConfig.model;
+    this.geminiApiUrl = geminiConfig.apiUrl; 
 
-    // Build generationConfig object from flat config
-    this.generationConfig = {
-      temperature: config.temperature,
-      topK: config.topK,
-      topP: config.topP,
-      maxOutputTokens: config.maxTokens, // Map maxTokens to maxOutputTokens
+    // Build Gemini generationConfig object from flat config
+    this.geminiGenerationConfig = {
+      temperature: geminiConfig.temperature,
+      topK: geminiConfig.topK,
+      topP: geminiConfig.topP,
+      maxOutputTokens: geminiConfig.maxTokens, 
       responseMimeType: 'application/json',
     };
 
-    // Check API key
-    if (!this.apiKey) {
-      console.warn('⚠️  WARNING: GEMINI_API_KEY is not set. GeminiService will use fallback responses.');
+    // Check Gemini API key
+    if (!this.geminiApiKey) {
+      console.warn('⚠️  WARNING: GEMINI_API_KEY is not set. GeminiService will attempt OpenAI fallback or use default responses.');
     }
 
-    // Initialize Axios
+    // Initialize OpenAI client
+    this.openaiApiKey = openaiConfig.apiKey;
+    if (!this.openaiApiKey) {
+      console.warn('⚠️  WARNING: OPENAI_API_KEY is not set. OpenAI fallback will not be available.');
+      this.openai = null;
+    } else {
+      this.openai = new OpenAI({ apiKey: this.openaiApiKey });
+      this.openaiModel = openaiConfig.model;
+      this.openaiTemperature = openaiConfig.temperature;
+      this.openaiMaxTokens = openaiConfig.maxTokens;
+      this.openaiTopP = openaiConfig.topP;
+    }
+
+    // Initialize Axios for Gemini
     this.axiosClient = axios.create();
 
     // Inject dependency
     if (!knowledgeBase) {
       throw new Error('Knowledge base dependency is required for GeminiService.');
     }
-    this.knowledgeBase = knowledgeBase; // Zapisujemy wstrzykniętą zależność
+    this.knowledgeBase = knowledgeBase; 
 
     // Bind methods
     this._createPrompt = this._createPrompt.bind(this);
-    this._parseResponse = this._parseResponse.bind(this);
+    this._parseResponse = this._parseResponse.bind(this); 
+    this._parseOpenAIResponse = this._parseOpenAIResponse.bind(this); 
     this._createDefaultTrainingPlan = this._createDefaultTrainingPlan.bind(this);
+    this._generatePlanWithOpenAI = this._generatePlanWithOpenAI.bind(this); 
 
     // Remove decorator calls
     this.generateTrainingPlan = this.generateTrainingPlan.bind(this);
@@ -58,100 +76,114 @@ class GeminiService {
     this.log('\n=== ROZPOCZĘCIE GENEROWANIA PLANU TRENINGOWEGO ===');
     this.log('1. Dane wejściowe użytkownika:', userData);
 
-    if (!this.apiKey) {
-      console.warn('API Key not found, returning default plan.');
-      return this._createDefaultTrainingPlan(userData);
+    // 1. Try Gemini API first
+    if (this.geminiApiKey) {
+      try {
+        this.log('\n--- PRÓBA WYGENEROWANIA PLANU PRZEZ GEMINI ---');
+        this.log('\n2. Tworzenie promptu dla Gemini...');
+        const prompt = this._createPrompt(userData);
+        // this.log('Wygenerowany prompt:', prompt); 
+
+        const requestUrl = `${this.geminiApiUrl}/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`;
+
+        this.log('\n3. Konfiguracja żądania do Gemini API:');
+        this.log(`- Model: ${this.geminiModel}`);
+        this.log(`- URL: ${requestUrl}`);
+
+        const requestBody = {
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: prompt,
+                },
+              ],
+            },
+          ],
+          generationConfig: this.geminiGenerationConfig,
+          safetySettings: [
+            {
+              category: 'HARM_CATEGORY_HARASSMENT',
+              threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+            },
+            {
+              category: 'HARM_CATEGORY_HATE_SPEECH',
+              threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+            },
+            {
+              category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+              threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+            },
+            {
+              category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+              threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+            },
+          ],
+        };
+
+        this.log('\n4. Konfiguracja generowania Gemini:');
+        this.log(`- Temperature: ${this.geminiGenerationConfig.temperature}`);
+        this.log(`- TopK: ${this.geminiGenerationConfig.topK}`);
+        this.log(`- TopP: ${this.geminiGenerationConfig.topP}`);
+        this.log(`- MaxTokens: ${this.geminiGenerationConfig.maxOutputTokens}`);
+
+        this.log('\n5. Wysyłanie żądania do Gemini API...');
+        // this.log('Request body:', requestBody); 
+
+        const response = await this.axiosClient.post(requestUrl, requestBody, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        this.log('\n6. Otrzymano odpowiedź z Gemini API.');
+        // this.log('Odpowiedź API:', response.data); 
+
+        this.log('\n7. Parsowanie odpowiedzi Gemini...');
+        const trainingPlan = this._parseResponse(response.data); 
+
+        this.log('\n8. Zwalidowano i sparsowano plan treningowy z Gemini.');
+        // this.log('Sparsowany plan:', trainingPlan);
+
+        this.log('\n=== ZAKOŃCZONO GENEROWANIE PLANU (GEMINI) ===');
+        return trainingPlan;
+
+      } catch (geminiError) {
+        this.error('\n⚠️ Błąd podczas generowania planu przez Gemini:', {
+          message: geminiError.message,
+          status: geminiError.response?.status,
+          data: geminiError.response?.data,
+          stack: geminiError.stack
+        });
+        // Jeśli Gemini zawiedzie, przechodzimy do OpenAI (jeśli skonfigurowane)
+      }
+    } else {
+      this.log('Klucz API Gemini nie jest ustawiony, pomijanie próby Gemini.');
     }
 
-    try {
-      this.log('\n2. Tworzenie promptu...');
-      const prompt = this._createPrompt(userData);
-      this.log('Wygenerowany prompt:', prompt); // Log the generated prompt
-
-      const requestUrl = `${this.apiUrl}/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
-
-      this.log('\n3. Konfiguracja żądania do Gemini API:');
-      this.log(`- Model: ${this.model}`);
-      this.log(`- URL: ${requestUrl}`);
-
-      const requestBody = {
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: prompt,
-              },
-            ],
-          },
-        ],
-        // Use the constructed generationConfig object
-        generationConfig: this.generationConfig,
-        safetySettings: [
-          {
-            category: 'HARM_CATEGORY_HARASSMENT',
-            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
-          },
-          {
-            category: 'HARM_CATEGORY_HATE_SPEECH',
-            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
-          },
-          {
-            category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
-          },
-          {
-            category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-            threshold: 'BLOCK_MEDIUM_AND_ABOVE',
-          },
-        ],
-      };
-
-      this.log('\n4. Konfiguracja generowania:');
-      this.log(`- Temperature: ${this.generationConfig.temperature}`);
-      this.log(`- TopK: ${this.generationConfig.topK}`);
-      this.log(`- TopP: ${this.generationConfig.topP}`);
-      this.log(`- MaxTokens: ${this.generationConfig.maxOutputTokens}`);
-
-      this.log('\n5. Wysyłanie żądania do API...');
-      this.log('Request body:', requestBody);
-
-      const response = await this.axiosClient.post(requestUrl, requestBody);
-
-      this.log('\n6. Otrzymano odpowiedź z API:');
-      this.log(`   Status: ${response.status}`);
-      // this.log(`   Data:`, response.data); // Avoid logging potentially huge data
-
-      this.log('\n7. Parsowanie odpowiedzi...');
-      const parsedPlan = this._parseResponse(response.data);
-
-      if (!parsedPlan) {
-        console.error('\n!!! Nie udało się sparsować odpowiedzi API, zwracanie planu domyślnego !!!');
-        return this._createDefaultTrainingPlan(userData);
-      }
-
-      // Add user-specific data not generated by the API
-      parsedPlan.metadata = {
-        ...parsedPlan.metadata,
-        target_group: userData.experienceLevel,
-        target_goal: userData.mainGoal,
-        level_hint: this.knowledgeBase.getExperienceLevelDescription(userData.experienceLevel),
-        days_per_week: userData.weeklyAvailability?.days?.length?.toString() || 'nie podano',
-      };
-      parsedPlan.user_id = userData.user_id; // Assuming user_id is passed in userData
-
-      this.log('\n8. Zwracanie wygenerowanego planu.');
-      // console.log('Final Plan:', JSON.stringify(parsedPlan, null, 2));
-      return parsedPlan;
-    } catch (error) {
-      // Logowanie szczegółowego błędu za pomocą console.error
-      console.error(`Błąd podczas generowania planu treningowego: ${error.message}`);
-      if (error.response) {
-        console.error('Odpowiedź błędu API:', JSON.stringify(error.response.data, null, 2));
-      }
-      console.error('Stack trace:', error.stack);
-      throw new AppError(`Nie udało się wygenerować planu treningowego: ${(error.response?.data?.error?.message || error.message)}`, 500);
+    // 2. Try OpenAI API as fallback
+    if (this.openai) {
+        try {
+            this.log('\n--- PRÓBA WYGENEROWANIA PLANU PRZEZ OPENAI (FALLBACK) ---');
+            const prompt = this._createPrompt(userData); 
+            const trainingPlan = await this._generatePlanWithOpenAI(userData, prompt);
+            this.log('\n=== ZAKOŃCZONO GENEROWANIE PLANU (OPENAI FALLBACK) ===');
+            return trainingPlan;
+        } catch (openaiError) {
+            this.error('\n⚠️ Błąd podczas generowania planu przez OpenAI (fallback):', {
+                message: openaiError.message,
+                status: openaiError.response?.status,
+                data: openaiError.response?.data,
+                stack: openaiError.stack
+            });
+            // Jeśli OpenAI również zawiedzie, przechodzimy do domyślnego planu
+        }
+    } else {
+        this.log('OpenAI nie skonfigurowane, pomijanie próby fallbacku OpenAI.');
     }
+
+    // 3. Fallback to default plan if both APIs fail or are not configured
+    this.log('\n--- GENEROWANIE PLANU DOMYŚLNEGO (FALLBACK) ---');
+    return this._createDefaultTrainingPlan(userData);
   }
 
   _createPrompt(userData) {
@@ -254,14 +286,13 @@ class GeminiService {
       : 'Brak dodatkowych celów i preferencji';
 
     const examplePlan = getExamplePlanTemplate(userData);
-    let examplePlanSection = ''; // Domyślnie pusta sekcja
+    let examplePlanSection = ''; 
     if (examplePlan) {
       try {
         const examplePlanJson = JSON.stringify(examplePlan, null, 2);
         examplePlanSection = `\n### PRZYKŁAD PLANU:\n${examplePlanJson}`;
       } catch (error) {
         console.error("Błąd podczas serializacji przykładowego planu:", error);
-        // Opcjonalnie można dodać notkę o błędzie
         examplePlanSection = `\n### PRZYKŁAD PLANU:\n(Błąd podczas generowania przykładu)`;
       }
     }
@@ -514,7 +545,8 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
     };
   }
 
-  _parseResponse(apiResponse) {
+  _parseResponse(apiResponse) { 
+    this.log('Rozpoczęcie parsowania odpowiedzi Gemini');
     try {
       if (!apiResponse) {
         console.error('Otrzymano pustą odpowiedź z API');
@@ -643,7 +675,117 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
       throw new AppError('Nieprawidłowa odpowiedź z API: ' + error.message, 500);
     }
   }
-  
+
+  // Nowa metoda do generowania planu przy użyciu OpenAI
+  async _generatePlanWithOpenAI(userData, prompt) {
+    if (!this.openai) {
+      throw new AppError('OpenAI client is not initialized.', 500);
+    }
+
+    this.log('\n2a. Konfiguracja żądania do OpenAI API:');
+    this.log(`- Model: ${this.openaiModel}`);
+    this.log(`- Temperature: ${this.openaiTemperature}`);
+    this.log(`- MaxTokens: ${this.openaiMaxTokens}`);
+    this.log(`- TopP: ${this.openaiTopP}`);
+
+    this.log('\n3a. Wysyłanie żądania do OpenAI API...');
+
+    const messages = [
+      {
+        role: 'system',
+        content: 'Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Twoim zadaniem jest wygenerowanie szczegółowego planu w formacie JSON na podstawie danych użytkownika. Zwróć tylko i wyłącznie poprawny obiekt JSON, bez żadnych dodatkowych komentarzy, wstępów czy wyjaśnień.'
+      },
+      {
+        role: 'user',
+        content: prompt
+      }
+    ];
+
+    const requestBody = {
+        model: this.openaiModel,
+        messages: messages,
+        temperature: this.openaiTemperature,
+        max_tokens: this.openaiMaxTokens,
+        top_p: this.openaiTopP,
+        response_format: { type: "json_object" }, 
+        frequency_penalty: openaiConfig.frequencyPenalty,
+        presence_penalty: openaiConfig.presencePenalty,
+    };
+    // this.log('OpenAI Request Body:', requestBody); 
+
+    const response = await this.openai.chat.completions.create(requestBody, {
+        timeout: openaiConfig.timeout
+    });
+
+    this.log('\n4a. Otrzymano odpowiedź z OpenAI API.');
+    // this.log('Odpowiedź API OpenAI:', response); 
+
+    this.log('\n5a. Parsowanie odpowiedzi OpenAI...');
+    const trainingPlan = this._parseOpenAIResponse(response);
+
+    this.log('\n6a. Zwalidowano i sparsowano plan treningowy z OpenAI.');
+    // this.log('Sparsowany plan OpenAI:', trainingPlan);
+    return trainingPlan;
+  }
+
+  // Nowa metoda do parsowania odpowiedzi z OpenAI
+  _parseOpenAIResponse(apiResponse) {
+    this.log('Rozpoczęcie parsowania odpowiedzi OpenAI');
+    try {
+        if (!apiResponse || !apiResponse.choices || apiResponse.choices.length === 0 || !apiResponse.choices[0].message || !apiResponse.choices[0].message.content) {
+            console.error('Niekompletna lub pusta odpowiedź OpenAI:', apiResponse);
+            throw new AppError('Niekompletna odpowiedź z API OpenAI.', 500);
+        }
+
+        const jsonString = apiResponse.choices[0].message.content;
+        this.log('Surowy JSON z OpenAI:', jsonString);
+
+        const plan = JSON.parse(jsonString);
+
+        // Dodatkowa walidacja struktury planu (podobna do tej w _parseGeminiResponse)
+        if (!plan || typeof plan !== 'object') {
+          throw new Error('Odpowiedź nie jest poprawnym obiektem JSON.');
+        }
+
+        // Tutaj można dodać bardziej szczegółową walidację pól, jeśli potrzeba
+        // np. sprawdzić istnienie plan.metadata, plan.plan_weeks itd.
+        const requiredKeys = ['metadata', 'plan_weeks', 'corrective_exercises', 'pain_monitoring', 'notes'];
+        for (const key of requiredKeys) {
+          if (!plan[key]) {
+            console.warn(`Ostrzeżenie: Brakujący klucz '${key}' w odpowiedzi OpenAI.`);
+            // Można zdecydować czy rzucić błąd, czy ustawić domyślną wartość
+            // throw new Error(`Brakujący klucz '${key}' w odpowiedzi OpenAI.`);
+          }
+        }
+
+        // Podobna logika czyszczenia nazw dni jak w Gemini
+        const defaultDays = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Niedz'];
+        if (plan.plan_weeks && Array.isArray(plan.plan_weeks)) {
+            plan.plan_weeks.forEach((week, weekIndex) => {
+                if (week.days && Array.isArray(week.days)) {
+                    week.days.forEach((day, dayIndex) => {
+                        if (!day.day_name || day.day_name.startsWith('Dzień')) {
+                            day.day_name = defaultDays[dayIndex % defaultDays.length];
+                        }
+                    });
+                } else {
+                     console.warn(`Brak dni w tygodniu ${weekIndex + 1} lub nie jest tablicą (OpenAI)`);
+                     week.days = [];
+                }
+            });
+        } else {
+             console.warn('plan_weeks nie jest tablicą lub nie istnieje (OpenAI)');
+             plan.plan_weeks = [];
+        }
+
+        this.log('Parsowanie odpowiedzi OpenAI zakończone sukcesem.');
+        return plan;
+    } catch (error) {
+        console.error('Błąd podczas parsowania odpowiedzi OpenAI:', error, 'Oryginalna odpowiedź:', apiResponse?.choices?.[0]?.message?.content);
+        throw new AppError('Nieprawidłowa odpowiedź JSON z API OpenAI: ' + error.message, 500);
+    }
+  }
+
   _createDefaultTrainingPlan(userData) {
     console.log('Tworzenie domyślnego planu treningowego');
     const currentData = userData || this.userData || {}; 
