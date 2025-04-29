@@ -12,9 +12,18 @@ const mongoSanitize = require('express-mongo-sanitize');
 const cookieParser = require('cookie-parser');
 const compression = require('compression');
 
+// Import nowej konfiguracji Swagger
+const swaggerSpec = require('./config/swaggerConfig');
+
 // Import routes
 const userRoutes = require('./routes/user.routes');
+
+// --- DEBUG LOG in app.js BEFORE plan.routes ---
+console.log('APP_DEBUG: Attempting to require plan.routes.js...');
 const planRoutes = require('./routes/plan.routes');
+console.log('APP_DEBUG: Successfully required plan.routes.js');
+// --- END DEBUG LOG ---
+
 const runningFormRoutes = require('./routes/running-form.routes');
 
 // Importowanie middleware obsługi błędów
@@ -37,56 +46,36 @@ app.set('trust proxy', true); // Ufaj wszystkim proxy
 // app.set('trust proxy', 1); // Ufaj tylko pierwszemu proxy
 // app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']); // Ufaj tylko określonym adresom
 
-// Konfiguracja Swagger
-const swaggerOptions = {
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'RunFitting API',
-      version: '1.0.0',
-      description: 'API do aplikacji planowania treningów biegowych',
-      contact: {
-        name: 'Wsparcie API',
-        email: 'support@runfitting.pl',
-      },
-    },
-    servers: [
-      {
-        url: 'http://localhost:3000',
-        description: 'Serwer lokalny',
-      },
-      {
-        url: 'https://app.znanytrener.ai',
-        description: 'Serwer produkcyjny',
-      }
-    ],
-  },
-  apis: ['./src/routes/*.js'],
-};
-
-const swaggerDocs = swaggerJsDoc(swaggerOptions);
-
-// Endpointy dokumentacji PUBLICZNE
+// Endpointy dokumentacji API (używające nowej konfiguracji z swaggerSpec)
 app.get('/openapi.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  res.send(swaggerDocs);
+  res.send(swaggerSpec);
 });
-app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerDocs));
+app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpec));
 
 // CORS musi być pierwszym middleware
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://app.znanytrener.ai'],  // Frontend domains
+  origin: function(origin, callback) {
+    const allowedOrigins = ['http://localhost:3001', 'https://app.znanytrener.ai'];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
 // Dodatkowa konfiguracja nagłówków dla CORS
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Credentials', 'true');
-  const allowedOrigins = ['http://localhost:3000', 'https://app.znanytrener.ai'];
-  if (allowedOrigins.includes(req.headers.origin)) {
-    res.header('Access-Control-Allow-Origin', req.headers.origin);
+  const origin = req.headers.origin;
+  if (origin && ['http://localhost:3001', 'https://app.znanytrener.ai'].includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
   }
   next();
 });
@@ -98,8 +87,7 @@ app.use(helmet({
 }));
 app.use(xss()); // Sanityzuje dane wejściowe
 
-// Zabezpiecz wszystkie trasy przez Supabase Auth
-app.use(supabaseAuth);
+// Usunięto globalne stosowanie supabaseAuth - jest teraz w routerach
 
 // Ograniczenie liczby żądań
 const limiter = rateLimit({
@@ -142,10 +130,12 @@ app.all('*', (req, res, next) => {
 // Middleware obsługi błędów
 app.use(globalErrorHandler);
 
-// Połączenie z bazą danych MongoDB
-connectDB();
+// Połączenie z bazą danych MongoDB tylko poza środowiskiem testowym
+if (process.env.NODE_ENV !== 'test') {
+  connectDB();
+}
 
 // Konfiguracja portu i uruchomienie serwera
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3002;
 
 module.exports = app; 

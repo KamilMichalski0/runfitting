@@ -6,7 +6,7 @@ module.exports = {
   apiUrl: 'https://generativelanguage.googleapis.com',
   model: 'gemini-2.5-pro-exp-03-25',
   maxTokens: 100000,
-  temperature: 0.1,
+  temperature: 0.3,
   topK: 40,
   topP: 0.95
 }; 

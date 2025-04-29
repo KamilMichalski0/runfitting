@@ -72,12 +72,10 @@ const sendErrorProd = (err, res) => {
     res.status(err.statusCode).json({
       success: false,
       status: err.status,
-      message: err.message
+      message: err.message,
+      ...(Object.keys(err.details || {}).length > 0 && { details: err.details }) // Dodaj szczegóły, jeśli istnieją
     });
   } else {
-    // Logowanie błędu
-    console.error('BŁĄD KRYTYCZNY 💥', err);
-    
     // Wysłanie ogólnej wiadomości
     res.status(500).json({
       success: false,
@@ -102,32 +100,27 @@ module.exports = (err, req, res, next) => {
   // Różne zachowanie w zależności od środowiska
   if (process.env.NODE_ENV === 'development') {
     sendErrorDev(err, res);
-  } else {
-    let error = { ...err };
-    error.message = err.message;
-    
-    // Obsługa różnych typów błędów
-    if (error.code === 11000) error = handleDuplicateKeyError(error);
-    if (error.name === 'ValidationError') error = handleValidationError(error);
-    if (error.name === 'JsonWebTokenError') error = handleJWTError();
-    if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
-    
-    // Sprawdź, czy error jest instancją AppError (ma metodę toJSON)
-    if (typeof error.toJSON !== 'function') {
-      // Jeśli nie, konwertuj go na format odpowiedzi produkcyjnej
-      const isOperational = error.name === 'ValidationError' || 
-                          error.code === 11000 || 
-                          error.name === 'JsonWebTokenError' || 
-                          error.name === 'TokenExpiredError';
-      
-      error = {
-        statusCode: error.statusCode || 500,
-        status: error.status || 'error',
-        message: error.message || 'Coś poszło nie tak!',
-        isOperational: isOperational
-      };
+  } else { // Produkcja lub Test
+    let errorToHandle = err; // Pracuj na kopii referencji lub nowym obiekcie
+
+    // Sprawdź specyficzne typy błędów TYLKO jeśli nie jest to już AppError
+    if (!(errorToHandle instanceof AppError)) {
+      if (errorToHandle.code === 11000) errorToHandle = handleDuplicateKeyError(errorToHandle);
+      else if (errorToHandle.name === 'ValidationError') errorToHandle = handleValidationError(errorToHandle);
+      else if (errorToHandle.name === 'JsonWebTokenError') errorToHandle = handleJWTError();
+      else if (errorToHandle.name === 'TokenExpiredError') errorToHandle = handleJWTExpiredError();
+      else {
+        // Jeśli to inny, nieznany błąd, oznacz jako nieoperacyjny
+        // Tworzymy nowy obiekt, aby nie modyfikować oryginału, jeśli to nie jest konieczne
+        errorToHandle = new AppError(
+          err.message || 'Coś poszło nie tak!', 
+          err.statusCode || 500, 
+          false // Oznacz jako nieoperacyjny
+        );
+      }
     }
     
-    sendErrorProd(error, res);
+    // Przekaż oryginalny AppError lub przetworzony błąd do sendErrorProd
+    sendErrorProd(errorToHandle, res);
   }
 }; 

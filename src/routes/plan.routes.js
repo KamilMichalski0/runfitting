@@ -69,53 +69,12 @@ const router = express.Router();
  *             properties:
  *               name:
  *                 type: string
- *               description: 
+ *               description:
  *                 type: string
  *               exercises:
  *                 type: array
  *                 items:
  *                   type: object
- *     RunningForm:
- *       type: object
- *       required:
- *         - firstName
- *         - age
- *         - email
- *         - experienceLevel
- *         - mainGoal
- *         - weeklyKilometers
- *         - trainingDaysPerWeek
- *       properties:
- *         firstName:
- *           type: string
- *           description: Imię użytkownika
- *         age:
- *           type: integer
- *           description: Wiek użytkownika
- *         email:
- *           type: string
- *           format: email
- *           description: Adres email użytkownika
- *         experienceLevel:
- *           type: string
- *           enum: [beginner, intermediate, advanced]
- *           description: Poziom zaawansowania w bieganiu
- *         mainGoal:
- *           type: string
- *           enum: [general_fitness, run_5k, run_10k, half_marathon, marathon, ultra_marathon, speed_improvement, endurance_improvement, other]
- *           description: Główny cel treningowy
- *         customGoal:
- *           type: string
- *           description: Niestandardowy cel, jeśli wybrano "other"
- *         weeklyKilometers:
- *           type: number
- *           description: Liczba kilometrów bieganych tygodniowo
- *         trainingDaysPerWeek:
- *           type: integer
- *           description: Liczba dni treningowych w tygodniu
- *         hasInjuries:
- *           type: boolean
- *           description: Czy użytkownik ma kontuzje/problemy zdrowotne
  */
 
 // Usunięto: router.use(authMiddleware.authenticate);
@@ -457,7 +416,7 @@ router.route('/:planId/days/:dayId/miss')
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/RunningForm'
+ *             $ref: '#/components/schemas/TrainingFormSubmission'
  *     responses:
  *       201:
  *         description: Plan treningowy utworzony pomyślnie
@@ -481,7 +440,7 @@ router.post('/form', trainingPlanController.generatePlan);
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/RunningForm'
+ *             $ref: '#/components/schemas/TrainingFormSubmission'
  *     responses:
  *       201:
  *         description: Formularz zapisany pomyślnie

@@ -102,7 +102,6 @@ const { validateRunningFormSubmission } = require('../validators/running-form.va
  *       401:
  *         description: Brak uwierzytelnienia
  */
-router.post('/', validateRunningFormSubmission, trainingPlanController.submitRunningForm);
 
 /**
  * @swagger

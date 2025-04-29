@@ -200,67 +200,96 @@ class GeminiService {
     const heartRateZones = this._calculateHeartRateZones(userData);
     
     let trainingPaces = null;
-    if (userData.cooperTestDistance) {
-      trainingPaces = this._calculateTrainingPaces(userData.cooperTestDistance);
+    // Użyj pola wynikTestuCoopera z nowego schematu formularza
+    if (userData.wynikTestuCoopera) {
+      trainingPaces = this._calculateTrainingPaces(userData.wynikTestuCoopera);
     }
-    
+
+    // Mapowanie celu użytkownika na rodzaj wiedzy
     const goalToKnowledgeMap = {
-      'general_fitness': 'general_fitness',
-      'run_5k': '5k',
-      'run_10k': '10k',
-      'half_marathon': 'halfMarathon',
-      'marathon': 'marathon',
-      'ultra_marathon': 'ultraMarathon',
-      'speed_improvement': 'general_fitness',
-      'endurance_improvement': 'general_fitness',
-      'other': 'general_fitness'
+      'redukcja_masy_ciala': 'general_fitness',
+      'przebiegniecie_dystansu': this._mapDistanceToKnowledgeBase(userData.dystansDocelowy || '5km'),
+      'zaczac_biegac': 'general_fitness',
+      'aktywny_tryb_zycia': 'general_fitness',
+      'zmiana_nawykow': 'general_fitness',
+      'powrot_po_kontuzji': 'general_fitness',
+      'poprawa_kondycji': 'general_fitness',
+      'inny_cel': 'general_fitness'
     };
 
-    const ageInfo = `Wiek: ${userData.age || 'nie podano'} lat`;
+    // Informacje o użytkowniku w nowym formacie
+    const ageInfo = `Wiek: ${userData.wiek || 'nie podano'} lat`;
     
+    // Mapowanie poziomu zaawansowania z nowego schematu
     const levelMap = {
-      'beginner': 'Początkujący (biegam nieregularnie, zaczynam przygodę z bieganiem)',
-      'intermediate': 'Średniozaawansowany (biegam regularnie od kilku miesięcy/lat)',
-      'advanced': 'Zaawansowany (biegam regularnie od lat, startuję w zawodach)'
+      'poczatkujacy': 'Początkujący (biegam nieregularnie, zaczynam przygodę z bieganiem)',
+      'sredniozaawansowany': 'Średniozaawansowany (biegam regularnie od kilku miesięcy/lat)',
+      'zaawansowany': 'Zaawansowany (biegam regularnie od lat, startuję w zawodach)'
     };
     
+    // Mapowanie celu z nowego schematu
     const goalMap = {
-      'general_fitness': 'Poprawa ogólnej kondycji / Dla zdrowia',
-      'run_5k': 'Przygotowanie do biegu na 5 km',
-      'run_10k': 'Przygotowanie do biegu na 10 km',
-      'half_marathon': 'Przygotowanie do półmaratonu',
-      'marathon': 'Przygotowanie do maratonu',
-      'ultra_marathon': 'Przygotowanie do ultramaratonu',
-      'speed_improvement': 'Poprawa prędkości na określonym dystansie',
-      'endurance_improvement': 'Zwiększenie wytrzymałości ogólnej',
-      'other': userData.customGoal || 'Inny cel (niesprecyzowany)'
+      'redukcja_masy_ciala': 'Redukcja masy ciała',
+      'przebiegniecie_dystansu': `Przebiegniecie dystansu ${userData.dystansDocelowy || '5km'}`,
+      'zaczac_biegac': 'Rozpoczęcie regularnych treningów biegowych',
+      'aktywny_tryb_zycia': 'Prowadzenie aktywnego trybu życia',
+      'zmiana_nawykow': 'Zmiana nawyków',
+      'powrot_po_kontuzji': 'Powrót do formy po kontuzji',
+      'poprawa_kondycji': 'Poprawa kondycji fizycznej',
+      'inny_cel': userData.innyCelOpis || 'Inny cel (niesprecyzowany)'
     };
     
-    const levelInfo = `Poziom zaawansowania: ${levelMap[userData.experienceLevel] || userData.experienceLevel || 'nie podano'}`;
-    const goalInfo = `Główny cel: ${goalMap[userData.mainGoal] || userData.mainGoal || 'nie podano'}`;
+    const levelInfo = `Poziom zaawansowania: ${levelMap[userData.poziomZaawansowania] || userData.poziomZaawansowania || 'nie podano'}`;
+    const goalInfo = `Główny cel: ${goalMap[userData.glownyCel] || userData.glownyCel || 'nie podano'}`;
     
-    const daysPerWeekInfo = `Preferowana liczba dni treningowych w tygodniu: ${userData.trainingDaysPerWeek || 'nie podano'}`;
-    const weeklyKilometersInfo = `Obecny tygodniowy kilometraż: ${userData.weeklyKilometers || 'nie podano'} km`;
+    const daysPerWeekInfo = `Preferowana liczba dni treningowych w tygodniu: ${userData.dniTreningowe ? userData.dniTreningowe.length : 'nie podano'}`;
+    const weeklyKilometersInfo = `Obecny tygodniowy kilometraż: ${userData.aktualnyKilometrTygodniowy || 'nie podano'} km`;
     
-    const planDuration = parseInt(userData.planDuration, 10);
-    const planDurationInfo = `Planowany czas trwania planu: ${!isNaN(planDuration) && planDuration > 0 ? planDuration : 'nie podano'} tygodni`;
+    // Określenie czasu trwania planu na podstawie poziomu zaawansowania
+    let planDuration = 8; // domyślnie 8 tygodni
+    if (userData.poziomZaawansowania === 'poczatkujacy') {
+      planDuration = 6;
+    } else if (userData.poziomZaawansowania === 'zaawansowany') {
+      planDuration = 12;
+    }
+    
+    const planDurationInfo = `Planowany czas trwania planu: ${planDuration} tygodni`;
     
     let healthInfo = [];
     
-    if (userData.hasInjuries) {
+    if (userData.kontuzje) {
       healthInfo.push('Użytkownik ma kontuzje');
+      if (userData.opisKontuzji) {
+        healthInfo.push(`Opis kontuzji: ${userData.opisKontuzji}`);
+      }
+      if (userData.lokalizacjaBolu) {
+        healthInfo.push(`Lokalizacja bólu: ${userData.lokalizacjaBolu}`);
+      }
+      if (userData.charakterBolu) {
+        healthInfo.push(`Charakter bólu: ${userData.charakterBolu}`);
+      }
+      if (userData.skalaBolu) {
+        healthInfo.push(`Skala bólu (0-10): ${userData.skalaBolu}`);
+      }
     }
     
-    if (userData.pastInjuries && userData.pastInjuries.length > 0) {
-      healthInfo.push(`Przeszłe kontuzje: ${userData.pastInjuries.join(', ')}`);
+    if (userData.hasPrzewlekleChorby && userData.chorobyPrzewlekle && userData.chorobyPrzewlekle.length > 0) {
+      healthInfo.push(`Choroby przewlekłe: ${userData.chorobyPrzewlekle.join(', ')}`);
+      if (userData.opisChorobPrzewleklych) {
+        healthInfo.push(`Szczegóły chorób przewlekłych: ${userData.opisChorobPrzewleklych}`);
+      }
     }
     
-    if (userData.medicalConditions && userData.medicalConditions.length > 0) {
-      healthInfo.push(`Choroby przewlekłe: ${userData.medicalConditions.join(', ')}`);
+    if (userData.alergie && userData.opisAlergii) {
+      healthInfo.push(`Alergie: ${userData.opisAlergii}`);
+    }
+
+    if (userData.lekiStale && userData.opisLekowStalych) {
+      healthInfo.push(`Leki stałe: ${userData.opisLekowStalych}`);
     }
     
-    if (userData.giIssuesFrequency && userData.giIssuesFrequency !== 'never') {
-      healthInfo.push(`Częstotliwość problemów żołądkowych: ${userData.giIssuesFrequency}`);
+    if (userData.problemyZoladkowe === 'tak' && userData.opisProblemowZoladkowych) {
+      healthInfo.push(`Problemy żołądkowe: ${userData.opisProblemowZoladkowych}`);
     }
     
     const healthInfoText = healthInfo.length > 0 
@@ -269,16 +298,32 @@ class GeminiService {
     
     let goalsInfo = [];
     
-    if (userData.runningTechniqueGoals && userData.runningTechniqueGoals.length > 0) {
-      goalsInfo.push(`Cele techniczne: ${userData.runningTechniqueGoals.join(', ')}`);
+    if (userData.poprawaTechnikiBiegu) {
+      goalsInfo.push(`Cel: Poprawa techniki biegu`);
+      if (userData.aspektyDoPoprawy && userData.aspektyDoPoprawy.length > 0) {
+        goalsInfo.push(`Aspekty techniczne do poprawy: ${userData.aspektyDoPoprawy.join(', ')}`);
+      }
     }
     
-    if (userData.dietGoals && userData.dietGoals.length > 0) {
-      goalsInfo.push(`Cele dietetyczne: ${userData.dietGoals.join(', ')}`);
+    if (userData.wsparcieDietetyczne) {
+      goalsInfo.push(`Cel: Wsparcie dietetyczne`);
+      if (userData.celeDietetyczne && userData.celeDietetyczne.length > 0) {
+        goalsInfo.push(`Cele dietetyczne: ${userData.celeDietetyczne.join(', ')}`);
+      }
+      if (userData.ograniczeniaZywieniowe && userData.ograniczeniaZywieniowe !== 'brak') {
+        goalsInfo.push(`Ograniczenia dietetyczne: ${userData.ograniczeniaZywieniowe}`);
+        if (userData.opisOgraniczen) {
+          goalsInfo.push(`Szczegóły ograniczeń: ${userData.opisOgraniczen}`);
+        }
+      }
     }
     
-    if (userData.dietaryRestrictions && userData.dietaryRestrictions.length > 0) {
-      goalsInfo.push(`Ograniczenia dietetyczne: ${userData.dietaryRestrictions.join(', ')}`);
+    if (userData.coMotywuje && userData.coMotywuje.length > 0) {
+      goalsInfo.push(`Motywacja: ${userData.coMotywuje.join(', ')}`);
+    }
+    
+    if (userData.gotowoscDoWyzwan) {
+      goalsInfo.push(`Gotowość do wyzwań (1-10): ${userData.gotowoscDoWyzwan}`);
     }
     
     const goalsInfoText = goalsInfo.length > 0 
@@ -308,9 +353,10 @@ class GeminiService {
 - Tempo regeneracyjne: ${trainingPaces.recovery.min}:${trainingPaces.recovery.sec.toString().padStart(2, '0')} min/km`;
     }
 
-    const targetDistance = goalToKnowledgeMap[userData.mainGoal] || 'general_fitness';
+    // Określenie dystansu docelowego z nowego schematu
+    const targetDistance = goalToKnowledgeMap[userData.glownyCel] || 'general_fitness';
     const distanceKnowledge = safeGet(this.knowledgeBase, `distances.${targetDistance}`, {}); 
-    const userLevel = userData.experienceLevel || 'beginner';
+    const userLevel = userData.poziomZaawansowania || 'poczatkujacy';
 
     const knowledgeBaseInfo = `
 ### BAZA WIEDZY DLA DYSTANSU ${targetDistance.toUpperCase()}:
@@ -473,15 +519,29 @@ KRYTYCZNE WYMAGANIA:
 WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika i wykorzystujący wiedzę z bazy wiedzy. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON. Nie używaj cudzysłowów w nazwach pól. Nie używaj pola "corrective_exercises". Nie używaj pola "pain_monitoring".`;
   }
 
+  // Nowa metoda mapująca dystans na odpowiedni klucz w bazie wiedzy
+  _mapDistanceToKnowledgeBase(distance) {
+    switch(distance) {
+      case '5km': return '5k';
+      case '10km': return '10k';
+      case 'polmaraton': return 'halfMarathon';
+      case 'maraton': return 'marathon';
+      case 'inny': return 'general_fitness';
+      default: return 'general_fitness';
+    }
+  }
+
   _calculateHeartRateZones(userData) {
+    // Obliczenie maksymalnego tętna na podstawie wieku
     let maxHR;
-    if (userData.maxHeartRate?.value && userData.maxHeartRate?.measured) {
-      maxHR = userData.maxHeartRate.value;
+    if (userData.maxHr) {
+      maxHR = userData.maxHr;
     } else {
-      maxHR = Math.round(208 - (0.7 * userData.age)); 
+      maxHR = Math.round(208 - (0.7 * userData.wiek)); 
     }
 
-    const restingHR = userData.restingHeartRate?.known ? userData.restingHeartRate.value : 60;
+    // Użyj restingHr z nowego schematu lub domyślnej wartości
+    const restingHR = userData.restingHr || 60;
 
     const hrr = maxHR - restingHR;
 
@@ -790,90 +850,132 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
     console.log('Tworzenie domyślnego planu treningowego');
     const currentData = userData || this.userData || {}; 
   
-    const planDuration = currentData && currentData.planDuration 
-      ? parseInt(currentData.planDuration, 10) 
-      : 8;
+    // Użyj nowych pól z schematu lub wartości domyślnych
+    const imieNazwisko = currentData.imieNazwisko || 'Użytkownik';
+    const poziomZaawansowania = currentData.poziomZaawansowania || 'poczatkujacy';
+    
+    // Domyślna długość planu zależna od poziomu zaawansowania
+    let planDuration = 8;
+    if (poziomZaawansowania === 'poczatkujacy') {
+      planDuration = 6;
+    } else if (poziomZaawansowania === 'zaawansowany') {
+      planDuration = 12;
+    }
 
-    const levelHint = currentData && currentData.experienceLevel 
-      ? currentData.experienceLevel 
-      : 'nieznany';
-  
+    // Tworzenie pustego zestawu tygodni
+    const planWeeks = [];
+    for (let weekNum = 1; weekNum <= planDuration; weekNum++) {
+      const focus = weekNum <= 2 ? "Budowanie bazy" : 
+                    weekNum <= 4 ? "Rozwój wytrzymałości" : 
+                    weekNum <= planDuration - 2 ? "Intensyfikacja treningów" :
+                    "Tapering przed zawodami";
+
+      // Ustal dni treningowe bazując na schemacie lub domyślne
+      const treningoweDni = currentData.dniTreningowe || ["poniedziałek", "środa", "sobota"];
+      
+      // Mapa dni tygodnia dla poprawnej kolejności
+      const daysOrder = {
+        "poniedziałek": 1,
+        "wtorek": 2,
+        "środa": 3,
+        "czwartek": 4,
+        "piątek": 5,
+        "sobota": 6,
+        "niedziela": 7
+      };
+      
+      // Posortuj dni treningowe według kolejności w tygodniu
+      const sortedTreningoweDni = [...treningoweDni].sort((a, b) => daysOrder[a] - daysOrder[b]);
+      
+      const days = sortedTreningoweDni.map(day => {
+        let workoutType, description, distance, duration;
+        
+        // Różnicuj treningi w zależności od dnia tygodnia
+        if (day === "poniedziałek" || day === "piątek") {
+          workoutType = "Trening łatwy";
+          description = "Bieg w strefie komfortowej, rozwijający bazę tlenową";
+          distance = 5 + (weekNum - 1) * 0.5; // Progresja dystansu przez tygodnie
+          duration = 30 + (weekNum - 1) * 5; // Progresja czasu przez tygodnie
+        } else if (day === "środa") {
+          workoutType = "Trening tempowy";
+          description = "Interwały biegowe ze zmiennym tempem";
+          distance = 4 + (weekNum - 1) * 0.3;
+          duration = 40 + (weekNum - 1) * 5;
+        } else {
+          workoutType = "Długi bieg";
+          description = "Długi powolny bieg budujący wytrzymałość";
+          distance = 8 + (weekNum - 1) * 1;
+          duration = 60 + (weekNum - 1) * 10;
+        }
+        
+        return {
+          day_name: day,
+          workout: {
+            type: workoutType,
+            description: description,
+            distance: parseFloat(distance.toFixed(1)),
+            duration: duration,
+            target_heart_rate: {
+              min: 120,
+              max: 150,
+              zone: "Strefa 2 (Łatwe tempo)"
+            },
+            support_exercises: [
+              {
+                name: "Rozciąganie mięśni nóg",
+                sets: 2,
+                reps: null,
+                duration: 30
+              },
+              {
+                name: "Wzmacnianie core",
+                sets: 2,
+                reps: 10,
+                duration: null
+              }
+            ]
+          }
+        };
+      });
+      
+      planWeeks.push({
+        week_num: weekNum,
+        focus: focus,
+        days: days
+      });
+    }
+
     return {
-      id: `running_plan_default_${Date.now()}`,
+      id: `plan_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       metadata: {
         discipline: "running",
-        target_group: "Biegacze początkujący", 
-        target_goal: "Poprawa ogólnej kondycji", 
-        level_hint: levelHint, 
-        days_per_week: "3", 
+        target_group: poziomZaawansowania === "poczatkujacy" ? "Biegacze początkujący" : 
+                     poziomZaawansowania === "sredniozaawansowany" ? "Biegacze średniozaawansowani" : 
+                     "Biegacze zaawansowani", 
+        target_goal: currentData.glownyCel || "poprawa_kondycji", 
+        level_hint: poziomZaawansowania, 
+        days_per_week: treningoweDni.length.toString(), 
         duration_weeks: planDuration, 
-        description: "Podstawowy plan biegowy (domyślny) - został wygenerowany awaryjnie",
+        description: `Plan treningowy dla ${imieNazwisko} (wygenerowany awaryjnie)`,
         author: "RunFitting AI"
       },
-      plan_weeks: [
-        {
-          week_num: 1,
-          focus: "Wprowadzenie do biegania",
-          days: [
-            {
-              day_name: "Pon",
-              workout: "Trening wprowadzający - 20-30 minut lekkiego biegu"
-            },
-            {
-              day_name: "Śr",
-              workout: "Trening tempowy - 3-4 km w tempie konwersacyjnym"
-            },
-            {
-              day_name: "Sob",
-              workout: "Długi bieg - 5-6 km w wolnym tempie"
-            }
-          ]
-        },
-        {
-          week_num: 2,
-          focus: "Budowanie bazy",
-          days: [
-            {
-              day_name: "Pon",
-              workout: "Trening wprowadzający - 25-35 minut lekkiego biegu"
-            },
-            {
-              day_name: "Śr",
-              workout: "Trening tempowy - 4-5 km w tempie konwersacyjnym"
-            },
-            {
-              day_name: "Sob",
-              workout: "Długi bieg - 6-7 km w wolnym tempie"
-            }
-          ]
-        }
-      ],
+      plan_weeks: planWeeks,
       corrective_exercises: {
-        frequency: "2-3 razy w tygodniu",
-        list: [
-          {
-            name: "Rozciąganie łydek",
-            description: "Stań w wykroku, tylna noga wyprostowana, przednia zgięta. Przytrzymaj 30 sekund.",
-            sets_reps: "2 serie po 30 sekund na każdą nogę"
-          },
-          {
-            name: "Wzmacnianie mięśni głębokich",
-            description: "Napnij mięśnie brzucha i utrzymaj napięcie przez 10 sekund.",
-            sets_reps: "3 serie po 10 powtórzeń"
-          }
-        ]
+        frequency: "Wykonuj 2-3 razy w tygodniu",
+        list: []
       },
       pain_monitoring: {
         scale: "0-10",
-        rules: [
-          "Przerwij trening przy bólu powyżej 5/10",
-          "Skonsultuj się z lekarzem przy utrzymującym się bólu"
-        ]
+        rules: ["Przerwij trening przy bólu powyżej 5/10", "Skonsultuj się z lekarzem przy utrzymującym się bólu"]
       },
       notes: [
         "Dostosuj plan do swoich możliwości",
-        "Pamiętaj o nawodnieniu",
-        "Ten plan jest planem awaryjnym i może wymagać dostosowania"
+        "Pamiętaj o nawodnieniu przed, w trakcie i po treningu",
+        "Rozgrzewka i rozciąganie są niezbędnymi elementami każdego treningu",
+        "Monitoruj swoje postępy",
+        "Odpoczynek jest równie ważny jak trening",
+        "Ten plan jest planem awaryjnym i może wymagać dostosowania",
+        "W przypadku kontuzji lub bólu skonsultuj się z lekarzem"
       ]
     };
   }

@@ -1,11 +1,11 @@
 const TrainingPlan = require('../models/training-plan.model');
-const RunningForm = require('../models/running-form.model');
+const TrainingFormSubmission = require('../models/running-form.model');
 const GeminiService = require('../services/gemini.service');
 const FallbackPlanGeneratorService = require('../services/fallback-plan-generator.service');
+const runningKnowledgeBase = require('../knowledge/running-knowledge-base');
 const AppError = require('../utils/app-error');
 const PlanGeneratorService = require('../services/plan-generator.service');
 const { logError } = require('../utils/logger');
-const mongoose = require('mongoose');
 
 // Inicjalizacja serwisów
 const fallbackPlanGenerator = new FallbackPlanGeneratorService();
@@ -13,14 +13,14 @@ const fallbackPlanGenerator = new FallbackPlanGeneratorService();
 class TrainingPlanController {
   constructor() {
     this.planGeneratorService = new PlanGeneratorService();
-    this.geminiService = new GeminiService();
+    this.geminiService = new GeminiService(runningKnowledgeBase);
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/generate:
    *   post:
-   *     summary: Generuje nowy plan treningowy dla użytkownika
+   *     summary: Generuje nowy plan treningowy na podstawie danych formularza
    *     tags:
    *       - TrainingPlan
    *     requestBody:
@@ -28,14 +28,7 @@ class TrainingPlanController {
    *       content:
    *         application/json:
    *           schema:
-   *             type: object
-   *             properties:
-   *               firstName:
-   *                 type: string
-   *               experienceLevel:
-   *                 type: string
-   *               mainGoal:
-   *                 type: string
+   *             $ref: '#/components/schemas/TrainingFormSubmission' # Odniesienie do schematu
    *     responses:
    *       201:
    *         description: Plan treningowy został wygenerowany pomyślnie
@@ -46,6 +39,7 @@ class TrainingPlanController {
    *               properties:
    *                 status:
    *                   type: string
+   *                   example: success
    *                 data:
    *                   type: object
    *                   properties:
@@ -53,6 +47,15 @@ class TrainingPlanController {
    *                       $ref: '#/components/schemas/TrainingPlan'
    *                     formId:
    *                       type: string
+   *                       format: objectid
+   *                       description: ID zapisanego formularza
+   *                     planId:
+   *                       type: string
+   *                       description: ID wygenerowanego planu (starsze pole, może być duplikatem _id)
+   *       400:
+   *         description: Błąd walidacji danych wejściowych lub brak wymaganych danych
+   *       500:
+   *         description: Wewnętrzny błąd serwera podczas generowania planu
    */
   async generatePlan(req, res, next) {
     try {
@@ -104,7 +107,7 @@ class TrainingPlanController {
       }
 
       // Zapisanie danych formularza w bazie
-      const runningForm = new RunningForm({
+      const runningForm = new TrainingFormSubmission({
         ...processedFormData,
         userId,
         status: 'pending'
@@ -158,10 +161,10 @@ class TrainingPlanController {
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/forms:
    *   post:
-   *     summary: Zapisuje formularz biegowy bez generowania planu
+   *     summary: Zapisuje nowy formularz zgłoszeniowy użytkownika
    *     tags:
    *       - TrainingPlan
    *     requestBody:
@@ -169,75 +172,78 @@ class TrainingPlanController {
    *       content:
    *         application/json:
    *           schema:
-   *             type: object
+   *             $ref: '#/components/schemas/TrainingFormSubmission' # Odniesienie do schematu
    *     responses:
    *       201:
-   *         description: Formularz został zapisany
+   *         description: Formularz został zapisany pomyślnie
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                   example: success
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     formId:
+   *                       type: string
+   *                       format: objectid
+   *                       description: ID zapisanego formularza
+   *                     message:
+   *                       type: string
+   *                       example: Formularz zgłoszeniowy zapisany pomyślnie.
+   *       400:
+   *         description: Błąd walidacji danych formularza
+   *       500:
+   *         description: Wewnętrzny błąd serwera podczas zapisywania formularza
    */
   async saveRunningForm(req, res, next) {
     try {
       const formData = req.body;
       const userId = req.user.sub;
-      
-      // Sprawdzenie wymaganych pól w obu formatach danych
-      const isLegacyFormat = formData.firstName !== undefined && 
-                             formData.email !== undefined;
-      
-      const isNewFormat = formData.name !== undefined && 
-                          formData.email !== undefined &&
-                          formData.goal !== undefined &&
-                          formData.level !== undefined;
 
-      if (!isLegacyFormat && !isNewFormat) {
-        return res.status(400).json({ 
-          error: 'Brak wymaganych danych do zapisania formularza' 
+      // Sprawdzenie, czy podstawowe wymagane pola są obecne (można dodać więcej walidacji)
+      if (!formData.imieNazwisko || !formData.wiek || !formData.glownyCel) {
+        return res.status(400).json({
+          error: 'Brak podstawowych danych do zapisania formularza (imię, wiek, cel).'
         });
       }
 
-      // Mapowanie danych z nowego formatu na format obsługiwany przez model
-      let processedFormData = formData;
-      
-      if (isNewFormat) {
-        processedFormData = {
-          firstName: formData.name,
-          email: formData.email,
-          experienceLevel: formData.level,
-          mainGoal: formData.goal,
-          trainingDaysPerWeek: formData.daysPerWeek,
-          weeklyKilometers: formData.weeklyDistance || 20,
-          age: formData.age || 30,
-          hasInjuries: formData.hasInjuries || false,
-          // inne pola, jeśli są dostępne
-          description: formData.description
-        };
-      }
-
-      // Zapisanie danych formularza w bazie
-      const runningForm = new RunningForm({
-        ...processedFormData,
+      // Zapisanie danych formularza w bazie przy użyciu nowego modelu
+      const newFormSubmission = new TrainingFormSubmission({
+        ...formData,
         userId,
-        status: 'pending'
+        status: 'nowy' // Ustawienie początkowego statusu
       });
-      
-      await runningForm.save();
+
+      await newFormSubmission.save();
 
       res.status(201).json({
         status: 'success',
         data: {
-          formId: runningForm._id,
-          message: 'Formularz zapisany pomyślnie. Plan zostanie wygenerowany asynchronicznie.'
+          formId: newFormSubmission._id,
+          message: 'Formularz zgłoszeniowy zapisany pomyślnie.' // Zaktualizowany komunikat
         }
       });
     } catch (error) {
-      logError('Błąd zapisywania formularza biegowego', error);
-      return res.status(500).json({ 
-        error: 'Wystąpił błąd podczas zapisywania formularza biegowego' 
+      logError('Błąd zapisywania formularza zgłoszeniowego', error);
+      // Dodanie szczegółów błędu walidacji, jeśli wystąpił
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({
+           error: 'Błąd walidacji danych formularza.',
+           details: error.errors
+         });
+      }
+      return res.status(500).json({
+        error: 'Wystąpił błąd podczas zapisywania formularza zgłoszeniowego'
       });
     }
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/generate-from-saved-form/{formId}:
    *   post:
    *     summary: Generuje plan treningowy na podstawie zapisanego formularza
@@ -259,7 +265,7 @@ class TrainingPlanController {
       const userId = req.user.sub;
 
       // Pobierz formularz z bazy
-      const runningForm = await RunningForm.findOne({ 
+      const runningForm = await TrainingFormSubmission.findOne({ 
         _id: formId,
         userId
       });
@@ -309,7 +315,7 @@ class TrainingPlanController {
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/user-plans:
    *   get:
    *     summary: Pobiera wszystkie plany treningowe użytkownika
@@ -344,7 +350,7 @@ class TrainingPlanController {
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/details/{planId}:
    *   get:
    *     summary: Pobiera szczegóły konkretnego planu treningowego
@@ -391,7 +397,7 @@ class TrainingPlanController {
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/progress:
    *   put:
    *     summary: Aktualizuje postęp w planie treningowym
@@ -460,7 +466,7 @@ class TrainingPlanController {
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/{planId}:
    *   delete:
    *     summary: Usuwa plan treningowy
@@ -478,7 +484,7 @@ class TrainingPlanController {
    */
   async deletePlan(req, res, next) {
     try {
-      const planId = req.params.id;
+      const planId = req.params.planId;
       const userId = req.user.sub;
 
       // Walidacja formatu ObjectId
@@ -505,7 +511,7 @@ class TrainingPlanController {
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/current-week:
    *   get:
    *     summary: Pobiera aktualny tydzień treningowy
@@ -558,48 +564,7 @@ class TrainingPlanController {
   }
 
   /**
-   * @openapi
-   * /api/training-plan/forms:
-   *   post:
-   *     summary: Zapisuje nowy formularz biegowy
-   *     tags:
-   *       - TrainingPlan
-   *     requestBody:
-   *       required: true
-   *       content:
-   *         application/json:
-   *           schema:
-   *             type: object
-   *     responses:
-   *       201:
-   *         description: Formularz został zapisany
-   */
-  async submitRunningForm(req, res, next) {
-    try {
-      // Tworzenie nowego formularza z danymi z żądania
-      const formData = {
-        ...req.body,
-        userId: req.user.sub,
-        status: 'pending'
-      };
-
-      const runningForm = new RunningForm(formData);
-      await runningForm.save();
-
-      res.status(201).json({
-        status: 'success',
-        data: {
-          formId: runningForm._id,
-          message: 'Formularz został zapisany. Możesz teraz wygenerować plan treningowy.'
-        }
-      });
-    } catch (error) {
-      next(new AppError(`Błąd podczas zapisywania formularza: ${error.message}`, 400));
-    }
-  }
-
-  /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/user-forms:
    *   get:
    *     summary: Pobiera wszystkie formularze biegowe użytkownika
@@ -611,7 +576,7 @@ class TrainingPlanController {
    */
   async getUserRunningForms(req, res, next) {
     try {
-      const forms = await RunningForm.find({ userId: req.user.sub })
+      const forms = await TrainingFormSubmission.find({ userId: req.user.sub })
         .select('firstName mainGoal experienceLevel createdAt status')
         .sort({ createdAt: -1 });
 
@@ -628,7 +593,7 @@ class TrainingPlanController {
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/form-details/{formId}:
    *   get:
    *     summary: Pobiera szczegóły konkretnego formularza biegowego
@@ -646,13 +611,19 @@ class TrainingPlanController {
    */
   async getRunningFormDetails(req, res, next) {
     try {
-      const form = await RunningForm.findOne({ 
-        _id: req.params.id,
+      const formId = req.params.formId;
+      // Walidacja formatu ObjectId
+      if (!mongoose.Types.ObjectId.isValid(formId)) {
+          throw new AppError('Nieprawidłowy format ID formularza', 400);
+      }
+
+      const form = await TrainingFormSubmission.findOne({
+        _id: formId,
         userId: req.user.sub
       });
 
       if (!form) {
-        return next(new AppError('Nie znaleziono formularza o podanym ID', 404));
+        return next(new AppError(`Nie znaleziono formularza o ID ${formId}`, 404));
       }
 
       // Sprawdzenie, czy formularz ma już powiązany plan treningowy
@@ -674,32 +645,65 @@ class TrainingPlanController {
         }
       });
     } catch (error) {
-      next(new AppError(`Błąd podczas pobierania szczegółów formularza: ${error.message}`, 400));
+      next(new AppError(`Błąd podczas pobierania szczegółów formularza ${req.params.formId}: ${error.message}`, 400));
     }
   }
 
   /**
-   * @openapi
-   * /api/training-plan/generate-from-form:
+   * @deprecated_openapi
+   * /api/training-plan/generate-from-form/{id}:
    *   post:
-   *     summary: Generuje plan treningowy na podstawie formularza biegowego
+   *     summary: Generuje plan treningowy na podstawie zapisanego formularza (wg ID)
    *     tags:
    *       - TrainingPlan
-   *     requestBody:
-   *       required: true
-   *       content:
-   *         application/json:
-   *           schema:
-   *             type: object
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: objectid
+   *         description: ID formularza zapisanego wcześniej przez użytkownika
    *     responses:
    *       201:
-   *         description: Plan treningowy został wygenerowany
+   *         description: Plan treningowy został wygenerowany pomyślnie
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                   example: success
+   *                 data:
+   *                   type: object
+   *                   properties:
+   *                     planId:
+   *                       type: string
+   *                       format: objectid
+   *                       description: ID nowo wygenerowanego planu treningowego
+   *                     message:
+   *                       type: string
+   *                       example: Plan treningowy został wygenerowany pomyślnie
+   *       400:
+   *         description: Błąd (np. formularz już przetworzony, nieprawidłowe ID)
+   *       404:
+   *         description: Nie znaleziono formularza o podanym ID
+   *       500:
+   *         description: Wewnętrzny błąd serwera podczas generowania planu
    */
   async generatePlanFromForm(req, res, next) {
     try {
+      const formId = req.params.id;
+
+      // Walidacja formatu ObjectId
+      if (!mongoose.Types.ObjectId.isValid(formId)) {
+        throw new AppError('Nieprawidłowy format ID formularza', 400);
+      }
+
       // Znajdź formularz po ID i sprawdź, czy należy do zalogowanego użytkownika
-      const runningForm = await RunningForm.findOne({
-        _id: req.params.id,
+      const runningForm = await TrainingFormSubmission.findOne({
+        _id: formId,
         userId: req.user.sub
       });
 
@@ -772,12 +776,12 @@ class TrainingPlanController {
         }
       });
     } catch (error) {
-      next(new AppError(`Błąd podczas generowania planu: ${error.message}`, error.statusCode || 400));
+      next(new AppError(`Błąd podczas generowania planu z formularza ${req.params.id}: ${error.message}`, error.statusCode || 400));
     }
   }
 
   /**
-   * @openapi
+   * @deprecated_openapi
    * /api/training-plan/regenerate-from-form/{formId}:
    *   post:
    *     summary: Regeneruje plan treningowy na podstawie formularza biegowego
@@ -803,7 +807,7 @@ class TrainingPlanController {
       }
 
       // Znajdź formularz po ID i sprawdź, czy należy do zalogowanego użytkownika
-      const runningForm = await RunningForm.findOne({
+      const runningForm = await TrainingFormSubmission.findOne({
         _id: formId,
         userId: req.user.sub
       });

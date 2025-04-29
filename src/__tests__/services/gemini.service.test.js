@@ -79,11 +79,30 @@ jest.mock('../../knowledge/running-knowledge-base', () => ({
   getTrainingZones: jest.fn().mockReturnValue({})
 }));
 
+// Mockujemy OpenAI
+const { OpenAI } = require('openai'); // Importuj OpenAI
+jest.mock('openai', () => {
+  // Tworzymy mock funkcji 'create', aby móc go później ustawiać w testach
+  const mockCreateCompletion = jest.fn();
+  return {
+    OpenAI: jest.fn().mockImplementation(() => ({
+      chat: {
+        completions: {
+          create: mockCreateCompletion
+        }
+      }
+    })),
+    // Eksportujemy mock funkcji, aby mieć do niej dostęp w testach
+    __mockCreateCompletion: mockCreateCompletion
+  };
+});
+
 // Główny blok opisujący testy dla GeminiService
 describe('GeminiService', () => {
   let geminiServiceInstance; // Zmienna na instancję serwisu
   let mockAxiosInstance;   // Zmienna na mock instancji axios
   let mockKnowledgeBaseInstance;
+  let mockOpenAICreateCompletion; // Zmienna na mock metody create z OpenAI
 
   // Konfiguracja przed każdym testem
   beforeEach(() => {
@@ -108,8 +127,11 @@ describe('GeminiService', () => {
     };
 
     // Tworzymy nową instancję GeminiService przed każdym testem
-    // Konstruktor użyje zamockowanego axios.create()
+    // Konstruktor użyje zamockowanego axios.create() oraz zamockowanego new OpenAI()
     geminiServiceInstance = new GeminiService(mockKnowledgeBaseInstance);
+
+    // Importujemy zamockowaną funkcję create z OpenAI po inicjalizacji modułów
+    mockOpenAICreateCompletion = require('openai').__mockCreateCompletion;
 
     // Mockujemy metody pomocnicze na *instancji* serwisu
     // Używamy mockImplementation, aby kontrolować zachowanie i uniknąć zależności
@@ -139,6 +161,20 @@ describe('GeminiService', () => {
         return geminiServiceInstance._createDefaultTrainingPlan(geminiServiceInstance.userData);
       }
     });
+
+    // Mock _parseOpenAIResponse na instancji - POZWOLIMY DZIAŁAĆ PRAWDZIWEJ W TEŚCIE FALLBACKU
+    // ALE MOŻEMY GO ZAMOCKOWAĆ W INNYCH TESTACH, JEŚLI POTRZEBA
+    // jest.spyOn(geminiServiceInstance, '_parseOpenAIResponse').mockImplementation((response) => {
+    //   // Mock logic for parsing OpenAI response if needed
+    //   try {
+    //     const content = response?.choices?.[0]?.message?.content;
+    //     if (!content) throw new Error('No content');
+    //     return JSON.parse(content);
+    //   } catch (e) {
+    //      console.error("Mock _parseOpenAIResponse failed", e);
+    //     return geminiServiceInstance._createDefaultTrainingPlan({});
+    //   }
+    // });
 
     // Mock _createDefaultTrainingPlan na instancji (konsekwentny dla fallbacków)
     jest.spyOn(geminiServiceInstance, '_createDefaultTrainingPlan').mockImplementation((userDataPassed) => {
@@ -297,6 +333,63 @@ describe('GeminiService', () => {
 
       expect(mockAxiosInstance.post).toHaveBeenCalledTimes(2); // Bo wywołujemy expect dwa razy
       // Fallback NIE powinien być wywołany, bo błąd jest przed parsowaniem
+      expect(geminiServiceInstance._createDefaultTrainingPlan).not.toHaveBeenCalled();
+    });
+
+    it('powinien użyć fallbacku OpenAI, gdy Gemini API zwróci błąd', async () => {
+      // 1. Symulacja błędu z Gemini API
+      const geminiApiError = new Error('Gemini API Error: Invalid Key');
+      geminiApiError.response = { status: 400, data: { error: { message: 'Invalid API Key' } } };
+      mockAxiosInstance.post.mockRejectedValue(geminiApiError);
+
+      // 2. Przygotowanie poprawnej odpowiedzi z mocka OpenAI API
+      const mockOpenAIPlan = {
+        id: 'openai_plan_fallback_success',
+        metadata: { discipline: 'running', description: 'Plan from OpenAI' },
+        plan_weeks: [{ week_num: 1, focus: 'OpenAI Week 1', days: [{day_name: "Pon", workout: "Test OpenAI"}] }],
+        corrective_exercises: { list: [] },
+        pain_monitoring: {}, notes: []
+      };
+      const mockOpenApiResponse = {
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: JSON.stringify(mockOpenAIPlan) // Odpowiedź jako string JSON
+            }
+          }
+        ]
+      };
+      // Ustawiamy mock metody create dla OpenAI
+      mockOpenAICreateCompletion.mockResolvedValue(mockOpenApiResponse);
+
+      // 3. Wywołanie metody do testowania
+      const result = await geminiServiceInstance.generateTrainingPlan(testUserData);
+
+      // 4. Asercje
+      // Sprawdzamy, czy próbowano wywołać Gemini
+      expect(mockAxiosInstance.post).toHaveBeenCalledTimes(1);
+      // Sprawdzamy, czy wywołano OpenAI
+      expect(mockOpenAICreateCompletion).toHaveBeenCalledTimes(1);
+      // Sprawdzamy, czy prompt przekazany do OpenAI jest poprawny (opcjonalnie, ale warto)
+      expect(mockOpenAICreateCompletion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({ role: 'user', content: 'Mockowany prompt dla testu' })
+          ]),
+          model: expect.any(String), // Sprawdź czy model jest przekazany
+          response_format: { type: 'json_object' } // Sprawdź czy format JSON jest wymagany
+        }),
+        expect.any(Object) // Opcje timeoutu
+      );
+
+      // Sprawdzamy, czy wynik pochodzi z mocka OpenAI (po parsowaniu)
+      expect(result).toBeDefined();
+      expect(result.id).toBe('openai_plan_fallback_success');
+      expect(result.metadata.description).toBe('Plan from OpenAI');
+      expect(result.plan_weeks[0].focus).toBe('OpenAI Week 1');
+
+      // Sprawdzamy, czy NIE wywołano domyślnego fallbacku
       expect(geminiServiceInstance._createDefaultTrainingPlan).not.toHaveBeenCalled();
     });
 
@@ -638,6 +731,138 @@ describe('GeminiService', () => {
       } catch (error) {
         console.error('E2E Test Error:', error); // Add detailed error logging
         throw error; // Keep throwing for better visibility
+      }
+    });
+  });
+
+  // --- OpenAI End-to-End Test (Requires OPENAI_API_KEY) --- //
+  describe('GeminiService - OpenAI End-to-End Test', () => {
+    console.log('\n--- OpenAI E2E Describe Block Start ---');
+    let geminiService;
+    let realKnowledgeBase;
+
+    beforeAll(() => {
+      console.log('--- OpenAI E2E beforeAll Start ---');
+      // Load environment variables
+      const dotenv = require('dotenv');
+      const path = require('path');
+      const envPath = path.resolve(__dirname, '../../../.env'); // Poprawiona ścieżka do .env
+      dotenv.config({ path: envPath });
+
+      // Check if API key is present - SKIP tests if not
+      if (!process.env.OPENAI_API_KEY) {
+        console.log('\n!!! OPENAI_API_KEY not found in environment variables. Skipping OpenAI E2E tests. !!!');
+      }
+      if (!process.env.GEMINI_API_KEY) {
+        // Ostrzeżenie, że Gemini nie będzie działać, ale test OpenAI może przejść
+        console.log('\n!!! WARNING: GEMINI_API_KEY not found. OpenAI test will rely solely on fallback mechanism. !!!');
+      }
+    });
+
+    afterAll(() => {
+      console.log('--- OpenAI E2E afterAll End ---');
+    });
+
+    beforeEach(() => {
+      console.log('--- OpenAI E2E beforeEach Start ---');
+      // Reset modules to ensure a fresh instance and config
+      jest.resetModules();
+      // Ensure the real dependencies are used
+      jest.unmock('axios');
+      jest.unmock('openai'); // Upewniamy się, że OpenAI nie jest mockowane
+      jest.unmock('../../knowledge/running-knowledge-base');
+      jest.unmock('../../config/gemini.config');
+      jest.unmock('../../config/openai.config'); // Upewniamy się, że config OpenAI nie jest mockowany
+
+      // Re-require after reset and unmock
+      const RealGeminiService = require('../../services/gemini.service');
+      realKnowledgeBase = require('../../knowledge/running-knowledge-base');
+      const realGeminiConfig = require('../../config/gemini.config');
+      const realOpenaiConfig = require('../../config/openai.config');
+
+      // Make sure the real configs use the environment variables
+      realGeminiConfig.apiKey = process.env.GEMINI_API_KEY;
+      realOpenaiConfig.apiKey = process.env.OPENAI_API_KEY; // Upewniamy się, że klucz OpenAI jest załadowany
+
+      // Create a new instance with the *real* knowledge base
+      geminiService = new RealGeminiService(realKnowledgeBase);
+
+      // --- FORCE OPENAI FALLBACK --- 
+      // Ustawiamy klucz Gemini na null, aby wymusić błąd i fallback
+      console.log('--- Forcing OpenAI fallback by setting Gemini API Key to null ---');
+      geminiService.geminiApiKey = null;
+      // Dodatkowo upewnijmy się, że klient OpenAI jest zainicjalizowany (jeśli klucz istnieje)
+      if(process.env.OPENAI_API_KEY) {
+          geminiService.openaiApiKey = process.env.OPENAI_API_KEY;
+          geminiService.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+          geminiService.openaiModel = realOpenaiConfig.model;
+          geminiService.openaiTemperature = realOpenaiConfig.temperature;
+          geminiService.openaiMaxTokens = realOpenaiConfig.maxTokens;
+          geminiService.openaiTopP = realOpenaiConfig.topP;
+      } else {
+          geminiService.openai = null; // Upewnij się, że jest null, jeśli klucz nie istnieje
+      }
+      console.log(`Gemini Key set to: ${geminiService.geminiApiKey}`);
+      console.log(`OpenAI Key is set: ${!!geminiService.openaiApiKey}`);
+      console.log(`OpenAI client initialized: ${!!geminiService.openai}`);
+      console.log('--- OpenAI E2E beforeEach End ---');
+    });
+
+    it('powinien wygenerować plan treningowy używając prawdziwego API OpenAI (fallback)', async () => {
+      console.log('\n--- OpenAI E2E Test Start ---');
+      // Skip test if API key is not set
+      if (!process.env.OPENAI_API_KEY) {
+        console.log('\n!!! Skipping OpenAI E2E test: OPENAI_API_KEY is not set. !!!');
+        return; // Or use jest.skip()
+      }
+      if (!geminiService.openai) {
+          console.log('\n!!! Skipping OpenAI E2E test: OpenAI client not initialized (likely missing API key). !!!');
+          return;
+      }
+
+      const userData = {
+        "firstName": "TestOpenAI",
+        "experienceLevel": "intermediate",
+        "mainGoal": "run_half_marathon",
+        "planDuration": 12,
+        "weeklyAvailability": {
+          "days": ["Tuesday", "Thursday", "Saturday", "Sunday"],
+          "timePerSession": "90"
+        },
+        "healthInfo": {
+          "injuries": ["knee_pain_runner"],
+          "conditions": []
+        },
+        "maxHeartRate": { "value": 185, "measured": true }
+      }; // Użyj innych danych niż w teście Gemini dla rozróżnienia
+
+      try {
+        console.log('--- OpenAI E2E Calling API (via fallback) ---');
+        const result = await geminiService.generateTrainingPlan(userData);
+        console.log('--- OpenAI E2E Received Result ---');
+        // console.log('OpenAI E2E Result:', JSON.stringify(result, null, 2)); // Odkomentuj, aby zobaczyć pełny plan
+
+        // Basic assertions for the E2E test
+        expect(result).toBeDefined();
+        expect(result.metadata).toBeDefined();
+        expect(result.metadata.discipline).toBe('running');
+        expect(result.plan_weeks).toBeDefined();
+        expect(Array.isArray(result.plan_weeks)).toBe(true);
+        // Sprawdź czy plan zawiera ćwiczenia korekcyjne i monitorowanie bólu
+        expect(result.corrective_exercises).toBeDefined();
+        expect(result.pain_monitoring).toBeDefined();
+        // Można dodać bardziej szczegółowe asercje, np. długość planu
+        // Oczekiwana długość może być różna, więc lepiej sprawdzać ogólną strukturę
+        // expect(result.plan_weeks.length).toBe(userData.planDuration); // Może nie być dokładne
+
+      } catch (error) {
+        console.error('OpenAI E2E Test Error:', {
+          message: error.message,
+          status: error.response?.status,
+          data: error.response?.data,
+          stack: error.stack
+        });
+        throw error; // Rzuć błąd dalej, aby test się nie powiódł
       }
     });
   });
