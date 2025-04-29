@@ -82,7 +82,12 @@ class GeminiService {
         this.log('\n--- PRÓBA WYGENEROWANIA PLANU PRZEZ GEMINI ---');
         this.log('\n2. Tworzenie promptu dla Gemini...');
         const prompt = this._createPrompt(userData);
-        // this.log('Wygenerowany prompt:', prompt); 
+        
+        // Odkomentowanie i rozszerzenie logowania promptu
+        this.log('Wygenerowany prompt:');
+        this.log('----------------------------------------');
+        this.log(prompt);
+        this.log('----------------------------------------');
 
         const requestUrl = `${this.geminiApiUrl}/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`;
 
@@ -747,6 +752,12 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
     this.log(`- Temperature: ${this.openaiTemperature}`);
     this.log(`- MaxTokens: ${this.openaiMaxTokens}`);
     this.log(`- TopP: ${this.openaiTopP}`);
+
+    // Dodaję logowanie promptu dla OpenAI
+    this.log('\nPrompt wysyłany do OpenAI:');
+    this.log('----------------------------------------');
+    this.log(prompt);
+    this.log('----------------------------------------');
 
     this.log('\n3a. Wysyłanie żądania do OpenAI API...');
 
