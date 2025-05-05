@@ -41,10 +41,12 @@ dotenv.config();
 const app = express();
 
 // Konfiguracja trust proxy
-app.set('trust proxy', true); // Ufaj wszystkim proxy
-// lub bardziej precyzyjna konfiguracja:
-// app.set('trust proxy', 1); // Ufaj tylko pierwszemu proxy
-// app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']); // Ufaj tylko określonym adresom
+// WAŻNE: Dostosuj tę wartość do swojego środowiska deploymentu!
+// 1 oznacza, że aplikacja ufa jednemu reverse proxy przed nią (np. Nginx, Heroku).
+// Jeśli aplikacja jest wystawiona bezpośrednio, ustaw 'false'.
+// Jeśli jest więcej proxy, ustaw odpowiednią liczbę.
+// Zobacz: https://expressjs.com/en/guide/behind-proxies.html
+app.set('trust proxy', 1); 
 
 // Endpointy dokumentacji API (używające nowej konfiguracji z swaggerSpec)
 app.get('/openapi.json', (req, res) => {
@@ -56,7 +58,7 @@ app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpec));
 // CORS musi być pierwszym middleware
 app.use(cors({
   origin: function(origin, callback) {
-    const allowedOrigins = ['http://localhost:3001', 'https://app.znanytrener.ai'];
+    const allowedOrigins = ['http://localhost:3002', 'http://localhost:3000', 'https://app.znanytrener.ai'];
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {

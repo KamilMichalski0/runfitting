@@ -147,12 +147,12 @@ const trainingFormSubmissionSchema = new Schema({
   przypomnienia: [{ type: String }], // Zod: optional()
 
   // --- SEKCJA 8: Zgody i zakończenie --- (Fields required)
-  zgodaPrawdziwosc: { type: Boolean, required: true, validate: { validator: v => v === true, message: 'Zgoda na prawdziwość danych jest wymagana.' } },
-  zgodaPrzetwarzanieDanych: { type: Boolean, required: true, validate: { validator: v => v === true, message: 'Zgoda na przetwarzanie danych jest wymagana.' } },
-  zgodaPowiadomienia: { type: Boolean }, // Zod: optional()
+  zgodaPrawdziwosc: { type: Boolean, required: true, default: true },
+  zgodaPrzetwarzanieDanych: { type: Boolean, required: true, default: true },
+  zgodaPowiadomienia: { type: Boolean, default: false }, // Domyślnie false, użytkownik może włączyć
 
   // --- Backend Fields ---
-  userId: { type: Schema.Types.ObjectId, ref: 'User', index: true }, // Link to the user who submitted
+  userId: { type: String, required: true, index: true }, // Link to the user who submitted (Supabase uses UUIDs as strings)
   status: { type: String, enum: ['nowy', 'w_trakcie_generowania', 'wygenerowany', 'blad'], default: 'nowy', index: true },
   planId: { type: Schema.Types.ObjectId, ref: 'TrainingPlan' }, // Link to the generated plan
 

@@ -63,8 +63,7 @@ const trainingPlanSchema = new mongoose.Schema({
   }],
   corrective_exercises: {
     frequency: {
-      type: String,
-      required: [true, 'Częstotliwość ćwiczeń jest wymagana']
+      type: String
     },
     list: [{
       name: {
@@ -75,16 +74,21 @@ const trainingPlanSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Opis ćwiczenia jest wymagany']
       },
-      sets_reps: {
-        type: String,
-        required: [true, 'Liczba serii i powtórzeń jest wymagana']
+      sets: {
+        type: Number,
+        required: [true, 'Liczba serii jest wymagana']
+      },
+      reps: {
+        type: Number
+      },
+      duration: {
+        type: Number
       }
     }]
   },
   pain_monitoring: {
     scale: {
-      type: String,
-      required: [true, 'Skala bólu jest wymagana']
+      type: String
     },
     rules: [{
       type: String,

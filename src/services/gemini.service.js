@@ -73,6 +73,9 @@ class GeminiService {
   }
 
   async generateTrainingPlan(userData) {
+    // Logowanie otrzymanych danych użytkownika na początku metody
+    console.log('GeminiService otrzymał dane użytkownika:', JSON.stringify(userData, null, 2));
+
     this.log('\n=== ROZPOCZĘCIE GENEROWANIA PLANU TRENINGOWEGO ===');
     this.log('1. Dane wejściowe użytkownika:', userData);
 
@@ -335,15 +338,24 @@ class GeminiService {
       ? goalsInfo.join('\n')
       : 'Brak dodatkowych celów i preferencji';
 
+    // Pobranie przykładowego planu
     const examplePlan = getExamplePlanTemplate(userData);
     let examplePlanSection = ''; 
     if (examplePlan) {
       try {
-        const examplePlanJson = JSON.stringify(examplePlan, null, 2);
-        examplePlanSection = `\n### PRZYKŁAD PLANU:\n${examplePlanJson}`;
+        // Można rozważyć skrócenie przykładu, np. tylko pierwszy tydzień
+        // const examplePlanPart = { ...examplePlan, plan_weeks: [examplePlan.plan_weeks[0]] };
+        const examplePlanJson = JSON.stringify(examplePlan, null, 2); // Użyj pełnego planu na razie
+        examplePlanSection = `
+
+### PRZYKŁADOWY PLAN TRENINGOWY (DO WGLĄDU):
+${examplePlanJson}`;
       } catch (error) {
         console.error("Błąd podczas serializacji przykładowego planu:", error);
-        examplePlanSection = `\n### PRZYKŁAD PLANU:\n(Błąd podczas generowania przykładu)`;
+        examplePlanSection = `
+
+### PRZYKŁADOWY PLAN TRENINGOWY (DO WGLĄDU):
+(Błąd podczas generowania przykładu)`;
       }
     }
 
@@ -428,11 +440,11 @@ ${goalsInfoText}
 - ${heartRateZones.zone5.name}: min=${heartRateZones.zone5.min}, max=${heartRateZones.zone5.max}
 
 ${cooperTestInfo}
-
+${examplePlanSection}
 ${knowledgeBaseInfo}
 
 ### WYMAGANA STRUKTURA ODPOWIEDZI:
-Plan musi być zwrócony w następującym formacie JSON.${examplePlanSection}
+Plan musi być zwrócony w następującym formacie JSON.
 
 ### SCHEMAT JSON:
 {
@@ -481,6 +493,25 @@ Plan musi być zwrócony w następującym formacie JSON.${examplePlanSection}
       ]
     }
   ],
+  "corrective_exercises": {
+    "frequency": string (np. "2-3 razy w tygodniu w dni nietreningowe"),
+    "list": [
+      {
+        "name": string,
+        "sets": number,
+        "reps": number lub null,
+        "duration": number lub null,
+        "description": string (opcjonalny opis/instrukcja)
+      }
+    ]
+  },
+  "pain_monitoring": {
+    "scale": string (np. "0-10, gdzie 0=brak bólu, 10=ból nie do zniesienia"),
+    "rules": [
+      string (np. "Przerwij trening, jeśli ból przekroczy 4/10"),
+      string (np. "Monitoruj ból przed, w trakcie i po treningu")
+    ]
+  },
   "notes": [
     string (spersonalizowane notatki dla użytkownika, uwzględniające jego poziom zaawansowania, cele i ograniczenia)
   ]
@@ -521,7 +552,8 @@ KRYTYCZNE WYMAGANIA:
 14. Uwzględnij fazy treningowe i zasady progresji z bazy wiedzy
 15. Dostosuj plan do specyficznych wymagań dystansu docelowego
 
-WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika i wykorzystujący wiedzę z bazy wiedzy. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON. Nie używaj cudzysłowów w nazwach pól. Nie używaj pola "corrective_exercises". Nie używaj pola "pain_monitoring".`;
+WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika i wykorzystujący wiedzę z bazy wiedzy. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON. Nie używaj cudzysłowów w nazwach pól.
+Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wzór struktury JSON. NIE KOPIUJ zawartości tego przykładu. Wygeneruj całkowicie nowy, unikalny plan dostosowany do danych użytkownika.`;
   }
 
   // Nowa metoda mapująca dystans na odpowiedni klucz w bazie wiedzy
@@ -818,14 +850,15 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
           throw new Error('Odpowiedź nie jest poprawnym obiektem JSON.');
         }
 
-        // Tutaj można dodać bardziej szczegółową walidację pól, jeśli potrzeba
-        // np. sprawdzić istnienie plan.metadata, plan.plan_weeks itd.
+        // Sprawdzenie kluczowych pól, teraz włączając nowe
         const requiredKeys = ['metadata', 'plan_weeks', 'corrective_exercises', 'pain_monitoring', 'notes'];
         for (const key of requiredKeys) {
           if (!plan[key]) {
             console.warn(`Ostrzeżenie: Brakujący klucz '${key}' w odpowiedzi OpenAI.`);
             // Można zdecydować czy rzucić błąd, czy ustawić domyślną wartość
-            // throw new Error(`Brakujący klucz '${key}' w odpowiedzi OpenAI.`);
+            // Na razie tylko ostrzegamy, ale można dodać domyślne wartości poniżej
+            // if (key === 'corrective_exercises') plan[key] = { frequency: "nie określono", list: [] };
+            // if (key === 'pain_monitoring') plan[key] = { scale: "nie określono", rules: [] };
           }
         }
 
@@ -973,7 +1006,10 @@ WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykła
       plan_weeks: planWeeks,
       corrective_exercises: {
         frequency: "Wykonuj 2-3 razy w tygodniu",
-        list: []
+        list: [
+          { name: "Rolowanie piankowe łydek", sets: 1, duration: 60, description: "Rozluźnij mięśnie łydek." },
+          { name: "Ćwiczenia wzmacniające mięśnie pośladkowe (mostki biodrowe)", sets: 3, reps: 15, description: "Wzmocnij mięśnie stabilizujące miednicę." }
+        ]
       },
       pain_monitoring: {
         scale: "0-10",

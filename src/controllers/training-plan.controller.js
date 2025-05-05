@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const TrainingPlan = require('../models/training-plan.model');
 const TrainingFormSubmission = require('../models/running-form.model');
 const GeminiService = require('../services/gemini.service');
@@ -14,6 +15,20 @@ class TrainingPlanController {
   constructor() {
     this.planGeneratorService = new PlanGeneratorService();
     this.geminiService = new GeminiService(runningKnowledgeBase);
+
+    // Bindowanie metod do instancji kontrolera
+    this.generatePlan = this.generatePlan.bind(this);
+    this.saveRunningForm = this.saveRunningForm.bind(this);
+    this.generatePlanFromSavedForm = this.generatePlanFromSavedForm.bind(this);
+    this.getUserPlans = this.getUserPlans.bind(this);
+    this.getPlanDetails = this.getPlanDetails.bind(this);
+    this.updateProgress = this.updateProgress.bind(this);
+    this.deletePlan = this.deletePlan.bind(this);
+    this.getCurrentWeek = this.getCurrentWeek.bind(this);
+    this.getUserRunningForms = this.getUserRunningForms.bind(this);
+    this.getRunningFormDetails = this.getRunningFormDetails.bind(this);
+    this.generatePlanFromForm = this.generatePlanFromForm.bind(this);
+    this.regeneratePlanFromForm = this.regeneratePlanFromForm.bind(this);
   }
 
   /**
@@ -119,17 +134,21 @@ class TrainingPlanController {
       // Generowanie planu
       let planData;
       try {
+        // Logowanie danych formularza przed wysłaniem do Gemini
+        console.log('Dane formularza przekazywane do geminiService:', JSON.stringify(runningForm.toObject(), null, 2));
         // Próba wygenerowania planu za pomocą Gemini
-        planData = await this.geminiService.generateTrainingPlan(processedFormData);
+        planData = await this.geminiService.generateTrainingPlan(runningForm.toObject());
       } catch (error) {
-        console.error('Błąd generowania planu przez Gemini:', error);
-        // Aktualizacja statusu formularza na błąd
-        runningForm.status = 'error';
-        await runningForm.save();
-        
-        // Fallback do lokalnego generatora
-        planData = await fallbackPlanGenerator.generateFallbackPlan(processedFormData);
+        console.error('Błąd Gemini:', error);
+        // Logowanie danych formularza przed wysłaniem do generatora zapasowego
+        console.log('Dane formularza przekazywane do fallbackGenerator:', JSON.stringify(runningForm.toObject(), null, 2));
+        // Fallback - wygeneruj plan za pomocą wbudowanego generatora
+        const fallbackGenerator = new FallbackPlanGeneratorService();
+        planData = await fallbackGenerator.generateFallbackPlan(runningForm.toObject());
       }
+
+      // Logowanie danych planu PRZED utworzeniem instancji TrainingPlan
+      console.log('Dane planu (planData) przed zapisem:', JSON.stringify(planData, null, 2));
 
       // Tworzenie nowego planu treningowego
       const trainingPlan = new TrainingPlan({
@@ -140,7 +159,7 @@ class TrainingPlanController {
       await trainingPlan.save();
       
       // Aktualizacja formularza o ID wygenerowanego planu
-      runningForm.status = 'processed';
+      runningForm.status = 'wygenerowany';
       runningForm.planId = trainingPlan._id;
       await runningForm.save();
 
@@ -274,7 +293,7 @@ class TrainingPlanController {
         throw new AppError('Nie znaleziono formularza', 404);
       }
       
-      if (runningForm.status === 'processed') {
+      if (runningForm.status === 'wygenerowany') {
         throw new AppError('Ten formularz został już przetworzony', 400);
       }
 
@@ -299,7 +318,7 @@ class TrainingPlanController {
       await trainingPlan.save();
       
       // Aktualizacja formularza o ID wygenerowanego planu
-      runningForm.status = 'processed';
+      runningForm.status = 'wygenerowany';
       runningForm.planId = trainingPlan._id;
       await runningForm.save();
 
@@ -711,12 +730,12 @@ class TrainingPlanController {
         throw new AppError('Nie znaleziono formularza', 404);
       }
       
-      if (runningForm.status === 'processed') {
+      if (runningForm.status === 'wygenerowany') {
         throw new AppError('Ten formularz został już przetworzony', 400);
       }
 
       // Sprawdź, czy formularz został już przetworzony i czy wymuszono ponowne generowanie
-      if (runningForm.status === 'processed' && req.query.force !== 'true') {
+      if (runningForm.status === 'wygenerowany' && req.query.force !== 'true') {
         throw new AppError('Ten formularz został już przetworzony. Użyj parametru force=true, aby wygenerować nowy plan.', 400);
       }
 
@@ -765,7 +784,7 @@ class TrainingPlanController {
       await trainingPlan.save();
 
       // Zaktualizuj status formularza
-      runningForm.status = 'processed';
+      runningForm.status = 'wygenerowany';
       await runningForm.save();
 
       res.status(201).json({

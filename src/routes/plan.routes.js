@@ -1,8 +1,12 @@
 const express = require('express');
 const trainingPlanController = require('../controllers/training-plan.controller');
 const { planValidators, trainingDayValidators } = require('../validators/plan.validators');
+const supabaseAuth = require('../middleware/supabaseAuth.middleware');
 
 const router = express.Router();
+
+// Zastosuj middleware autoryzacji do wszystkich tras w tym pliku
+router.use(supabaseAuth);
 
 /**
  * @swagger
@@ -76,8 +80,6 @@ const router = express.Router();
  *                 items:
  *                   type: object
  */
-
-// Usunięto: router.use(authMiddleware.authenticate);
 
 /**
  * @swagger
