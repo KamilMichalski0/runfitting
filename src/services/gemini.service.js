@@ -253,14 +253,48 @@ class GeminiService {
     const daysPerWeekInfo = `Preferowana liczba dni treningowych w tygodniu: ${userData.dniTreningowe ? userData.dniTreningowe.length : 'nie podano'}`;
     const weeklyKilometersInfo = `Obecny tygodniowy kilometraż: ${userData.aktualnyKilometrTygodniowy || 'nie podano'} km`;
     
-    // Określenie czasu trwania planu na podstawie poziomu zaawansowania
+    // Określenie czasu trwania planu na podstawie głównego celu
     let planDuration = 8; // domyślnie 8 tygodni
-    if (userData.poziomZaawansowania === 'poczatkujacy') {
-      planDuration = 6;
-    } else if (userData.poziomZaawansowania === 'zaawansowany') {
-      planDuration = 12;
+    const mainGoal = userData.glownyCel;
+    const targetDistanceGoal = userData.dystansDocelowy;
+
+    switch (mainGoal) {
+      case 'redukcja_masy_ciala':
+      case 'aktywny_tryb_zycia':
+      case 'zmiana_nawykow':
+      case 'powrot_po_kontuzji':
+      case 'poprawa_kondycji':
+      case 'inny_cel':
+        planDuration = 8;
+        break;
+      case 'zaczac_biegac':
+        planDuration = 6;
+        break;
+      case 'przebiegniecie_dystansu':
+        // Użyj zmiennej o zmienionej nazwie
+        switch (targetDistanceGoal) {
+          case '5km':
+            planDuration = 6;
+            break;
+          case '10km':
+            planDuration = 8;
+            break;
+          case 'polmaraton':
+            planDuration = 12;
+            break;
+          case 'maraton':
+            planDuration = 16;
+            break;
+          default: // inny dystans lub brak
+            planDuration = 8;
+            break;
+        }
+        break;
+      default:
+        planDuration = 8; // Domyślna wartość, jeśli cel nieznany
+        break;
     }
-    
+
     const planDurationInfo = `Planowany czas trwania planu: ${planDuration} tygodni`;
     
     let healthInfo = [];
@@ -897,13 +931,47 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
     // Użyj nowych pól z schematu lub wartości domyślnych
     const imieNazwisko = currentData.imieNazwisko || 'Użytkownik';
     const poziomZaawansowania = currentData.poziomZaawansowania || 'poczatkujacy';
-    
-    // Domyślna długość planu zależna od poziomu zaawansowania
-    let planDuration = 8;
-    if (poziomZaawansowania === 'poczatkujacy') {
-      planDuration = 6;
-    } else if (poziomZaawansowania === 'zaawansowany') {
-      planDuration = 12;
+
+    // Domyślna długość planu zależna od celu użytkownika
+    let planDuration = 8; // domyślnie 8 tygodni
+    const mainGoal = currentData.glownyCel;
+    const targetDistanceGoal = currentData.dystansDocelowy;
+
+    switch (mainGoal) {
+      case 'redukcja_masy_ciala':
+      case 'aktywny_tryb_zycia':
+      case 'zmiana_nawykow':
+      case 'powrot_po_kontuzji':
+      case 'poprawa_kondycji':
+      case 'inny_cel':
+        planDuration = 8;
+        break;
+      case 'zaczac_biegac':
+        planDuration = 6;
+        break;
+      case 'przebiegniecie_dystansu':
+        // Użyj zmiennej o zmienionej nazwie
+        switch (targetDistanceGoal) {
+          case '5km':
+            planDuration = 6;
+            break;
+          case '10km':
+            planDuration = 8;
+            break;
+          case 'polmaraton':
+            planDuration = 12;
+            break;
+          case 'maraton':
+            planDuration = 16;
+            break;
+          default: // inny dystans lub brak
+            planDuration = 8;
+            break;
+        }
+        break;
+      default:
+        planDuration = 8; // Domyślna wartość, jeśli cel nieznany
+        break;
     }
 
     // Tworzenie pustego zestawu tygodni
