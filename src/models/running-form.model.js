@@ -113,15 +113,15 @@ const trainingFormSubmissionSchema = new Schema({
   opisAspektowDoPoprawy: { type: String, trim: true }, // Required via Zod refine if aspektyDoPoprawy includes 'inne'
 
   // --- SEKCJA 5: Odżywianie i nawodnienie --- (Fields optional unless wsparcieDietetyczne=true or problemyZoladkowe='tak')
-  ograniczeniaZywieniowe: { type: String, enum: ['brak', 'weganizm', 'wegetarianizm', 'bezglutenowa', 'bezlaktozowa', 'alergie', 'inne'] }, // Zod: optional()
+  ograniczeniaZywieniowe: [{ type: String }], // Zmieniono z String enum na Array
   opisOgraniczen: { type: String, trim: true }, // Required via Zod refine if ograniczeniaZywieniowe != 'brak'
   celeDietetyczne: [{ type: String }], // Zod: optional()
   problemyZoladkowe: { type: String, enum: ['tak', 'nie'] },
   opisProblemowZoladkowych: { type: String, trim: true }, // Required via Zod refine if problemyZoladkowe='tak'
-  posilekPrzedTreningiem: { type: String, trim: true }, // Zod: optional()
+  posilekPrzedTreningiem: [{ type: String }], // Zmieniono z String na Array
   czasPrzedTreningiem: { type: String, trim: true }, // Zod: optional() -- THIS IS THE FIELD CAUSING LINT ERROR!
-  posilekPodczasTreningu: { type: String, trim: true }, // Zod: optional()
-  posilekPoTreningu: { type: String, trim: true }, // Zod: optional()
+  posilekPodczasTreningu: [{ type: String }], // Zmieniono z String na Array
+  posilekPoTreningu: [{ type: String }], // Zmieniono z String na Array
   nawadnianie: { type: Number, min: 0, max: 10 }, // Zod: optional() Litry dziennie
   inneNapoje: [{ type: String }], // Zod: optional()
 

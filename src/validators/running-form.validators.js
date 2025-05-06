@@ -97,6 +97,85 @@ exports.validateRunningForm = [
     .isString().withMessage('Opis musi być tekstem')
     .isLength({ max: 1000 }).withMessage('Opis może mieć maksymalnie 1000 znaków'),
   
+  // --- SEKCJA 5: Odżywianie i nawodnienie ---
+  body('ograniczeniaZywieniowe')
+    .optional()
+    .isArray().withMessage('Ograniczenia żywieniowe muszą być tablicą.')
+    .custom((value) => {
+      if (!Array.isArray(value)) return true; // Skip if not an array (handled by isArray)
+      return value.every(item => typeof item === 'string');
+    }).withMessage('Każdy element w ograniczeniach żywieniowych musi być tekstem.'),
+
+  body('opisOgraniczen')
+    .optional()
+    .if(body('ograniczeniaZywieniowe').exists({ checkFalsy: true }).isArray({ min: 1 })) // Required if ograniczeniaZywieniowe is not empty
+    .notEmpty().withMessage('Opis ograniczeń jest wymagany, jeśli podano ograniczenia.')
+    .isString().withMessage('Opis ograniczeń musi być tekstem.')
+    .trim(),
+    
+  body('celeDietetyczne')
+    .optional()
+    .isArray().withMessage('Cele dietetyczne muszą być tablicą.')
+    .custom((value) => {
+      if (!Array.isArray(value)) return true;
+      return value.every(item => typeof item === 'string');
+    }).withMessage('Każdy element w celach dietetycznych musi być tekstem.'),
+
+  body('problemyZoladkowe')
+    // Assuming this field might become mandatory later based on context, keeping notEmpty for now
+    // If it can be truly optional, replace notEmpty() with optional()
+    .notEmpty().withMessage('Informacja o problemach żołądkowych jest wymagana.') 
+    .isString().withMessage('Informacja o problemach żołądkowych musi być tekstem.')
+    .isIn(['tak', 'nie']).withMessage('Problemy żołądkowe muszą być "tak" lub "nie".'),
+
+  body('opisProblemowZoladkowych')
+    .optional()
+    .if(body('problemyZoladkowe').equals('tak'))
+    .notEmpty().withMessage('Opis problemów żołądkowych jest wymagany, jeśli zaznaczono "tak".')
+    .isString().withMessage('Opis problemów żołądkowych musi być tekstem.')
+    .trim(),
+    
+  body('posilekPrzedTreningiem')
+    .optional()
+    .isArray().withMessage('Posiłek przed treningiem musi być tablicą.')
+    .custom((value) => {
+      if (!Array.isArray(value)) return true;
+      return value.every(item => typeof item === 'string');
+    }).withMessage('Każdy element w posiłku przed treningiem musi być tekstem.'),
+    
+  body('czasPrzedTreningiem')
+    .optional()
+    .isString().withMessage('Czas przed treningiem musi być tekstem.')
+    .trim(),
+    
+  body('posilekPodczasTreningu')
+    .optional()
+    .isArray().withMessage('Posiłek podczas treningu musi być tablicą.')
+    .custom((value) => {
+      if (!Array.isArray(value)) return true;
+      return value.every(item => typeof item === 'string');
+    }).withMessage('Każdy element w posiłku podczas treningu musi być tekstem.'),
+    
+  body('posilekPoTreningu')
+    .optional()
+    .isArray().withMessage('Posiłek po treningu musi być tablicą.')
+    .custom((value) => {
+      if (!Array.isArray(value)) return true;
+      return value.every(item => typeof item === 'string');
+    }).withMessage('Każdy element w posiłku po treningu musi być tekstem.'),
+    
+  body('nawadnianie')
+    .optional()
+    .isFloat({ min: 0, max: 10 }).withMessage('Nawadnianie musi być liczbą od 0 do 10.'), // Changed to isFloat for flexibility
+    
+  body('inneNapoje')
+    .optional()
+    .isArray().withMessage('Inne napoje muszą być tablicą.')
+    .custom((value) => {
+      if (!Array.isArray(value)) return true;
+      return value.every(item => typeof item === 'string');
+    }).withMessage('Każdy element w innych napojach musi być tekstem.'),
+  
   // Sprawdzenie wyników walidacji
   checkValidationResult
 ];

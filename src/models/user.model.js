@@ -4,6 +4,12 @@ const mongoose = require('mongoose');
  * Schema użytkownika aplikacji
  */
 const userSchema = new mongoose.Schema({
+  supabaseId: {
+    type: String,
+    required: [true, 'Identyfikator Supabase jest wymagany.'],
+    unique: true,
+    index: true
+  },
   name: {
     type: String,
     required: [true, 'Imię jest wymagane'],
@@ -28,6 +34,10 @@ const userSchema = new mongoose.Schema({
     default: true,
     select: false
   },
+  hasFilledRunningForm: { // Nowe pole
+    type: Boolean,
+    default: false
+  },
   // Dane profilowe użytkownika
   gender: {
     type: String,
@@ -48,10 +58,70 @@ const userSchema = new mongoose.Schema({
     min: [100, 'Wzrost musi być co najmniej 100 cm'],
     max: [250, 'Wzrost nie może przekraczać 250 cm']
   },
+  phoneNumber: {
+    type: String,
+    trim: true,
+    // Można dodać walidację formatu numeru telefonu, jeśli jest potrzebna
+    // match: [/^[+]?[0-9]{9,15}$/, 'Proszę podać prawidłowy numer telefonu']
+  },
+  waistCircumference: {
+    type: Number,
+    min: [30, 'Obwód talii musi wynosić co najmniej 30 cm'],
+    max: [200, 'Obwód talii nie może przekraczać 200 cm']
+  },
   restingHeartRate: {
     type: Number,
     min: [30, 'Tętno spoczynkowe musi być co najmniej 30 uderzeń na minutę'],
     max: [100, 'Tętno spoczynkowe nie może przekraczać 100 uderzeń na minutę']
+  },
+  maxHeartRate: { // Dodane z formularza
+    type: Number,
+    min: [100, 'Tętno maksymalne musi być co najmniej 100 uderzeń na minutę'],
+    max: [250, 'Tętno maksymalne nie może przekraczać 250 uderzeń na minutę']
+  },
+  experienceLevel: { // Dodane z formularza (poziomZaawansowania)
+    type: String,
+    enum: ['poczatkujacy', 'sredniozaawansowany', 'zaawansowany']
+  },
+  currentActivityLevel: { // Dodane z formularza (obecnaAktywnosc)
+    type: String,
+    enum: ['siedzacy', 'lekko_aktywny', 'umiarkowanie_aktywny', 'aktywny']
+  },
+  chronotype: { // Dodane z formularza
+    type: String,
+    enum: ['ranny_ptaszek', 'nocny_marek', 'posredni']
+  },
+  preferredTrainingTime: { // Dodane z formularza
+    type: String,
+    enum: ['rano', 'poludnie', 'wieczor', 'dowolnie']
+  },
+  availableEquipment: [{ // Dodane z formularza
+    type: String
+  }],
+  hasCurrentInjuries: { // Dodane z formularza (kontuzje)
+    type: Boolean,
+    default: false
+  },
+  hasHealthRestrictions: { // Dodane z formularza (ograniczeniaZdrowotne)
+    type: Boolean,
+    default: false
+  },
+  hasAllergies: { // Dodane z formularza (alergie)
+    type: Boolean,
+    default: false
+  },
+  mainFitnessGoal: { // Dodane z formularza (glownyCel)
+    type: String,
+    enum: [
+      'redukcja_masy_ciala',
+      'przebiegniecie_dystansu',
+      'zaczac_biegac',
+      'aktywny_tryb_zycia',
+      'zmiana_nawykow',
+      'powrot_po_kontuzji',
+      'poprawa_kondycji',
+      'inny_cel',
+    ]
   },
   // Cele treningowe
   fitnessGoals: [{

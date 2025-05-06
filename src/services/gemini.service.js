@@ -352,8 +352,8 @@ class GeminiService {
       if (userData.celeDietetyczne && userData.celeDietetyczne.length > 0) {
         goalsInfo.push(`Cele dietetyczne: ${userData.celeDietetyczne.join(', ')}`);
       }
-      if (userData.ograniczeniaZywieniowe && userData.ograniczeniaZywieniowe !== 'brak') {
-        goalsInfo.push(`Ograniczenia dietetyczne: ${userData.ograniczeniaZywieniowe}`);
+      if (userData.ograniczeniaZywieniowe && Array.isArray(userData.ograniczeniaZywieniowe) && userData.ograniczeniaZywieniowe.length > 0) {
+        goalsInfo.push(`Ograniczenia dietetyczne: ${userData.ograniczeniaZywieniowe.join(', ')}`);
         if (userData.opisOgraniczen) {
           goalsInfo.push(`Szczegóły ograniczeń: ${userData.opisOgraniczen}`);
         }
