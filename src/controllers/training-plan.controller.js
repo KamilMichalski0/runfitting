@@ -7,6 +7,7 @@ const runningKnowledgeBase = require('../knowledge/running-knowledge-base');
 const AppError = require('../utils/app-error');
 const PlanGeneratorService = require('../services/plan-generator.service');
 const { logError } = require('../utils/logger');
+const TrainingPlanService = require('../services/trainingPlan.service');
 
 // Inicjalizacja serwisów
 const fallbackPlanGenerator = new FallbackPlanGeneratorService();
@@ -29,6 +30,10 @@ class TrainingPlanController {
     this.getRunningFormDetails = this.getRunningFormDetails.bind(this);
     this.generatePlanFromForm = this.generatePlanFromForm.bind(this);
     this.regeneratePlanFromForm = this.regeneratePlanFromForm.bind(this);
+
+    // NOWE METODY DLA MODYFIKACJI
+    this.modifyPlanDay = this.modifyPlanDay.bind(this);
+    this.modifyPlanWeek = this.modifyPlanWeek.bind(this);
   }
 
   /**
@@ -889,6 +894,76 @@ class TrainingPlanController {
       });
     } catch (error) {
       next(new AppError(`Błąd podczas regenerowania planu: ${error.message}`, error.statusCode || 400));
+    }
+  }
+
+
+
+  // --- NOWE METODY DLA MODYFIKACJI PLANU ---
+  async modifyPlanDay(req, res, next) {
+    try {
+      const userId = req.user.sub;
+      const { planId, weekIndex, dayIndex } = req.params;
+      const { modificationReason } = req.body;
+
+      if (!modificationReason) {
+        throw new AppError('Powód modyfikacji jest wymagany.', 400);
+      }
+      if (isNaN(parseInt(weekIndex)) || isNaN(parseInt(dayIndex))) {
+        throw new AppError('Indeksy tygodnia i dnia muszą być liczbami.', 400);
+      }
+
+      const updatedPlan = await TrainingPlanService.requestDayModification(
+        userId,
+        planId,
+        parseInt(weekIndex),
+        parseInt(dayIndex),
+        modificationReason
+      );
+
+      res.status(200).json({
+        status: 'success',
+        message: 'Dzień w planie został zmodyfikowany.',
+        data: {
+          plan: updatedPlan
+        }
+      });
+    } catch (error) {
+      logError('Błąd podczas modyfikacji dnia w planie', error);
+      next(error); // Przekaż błąd do globalnego error handlera
+    }
+  }
+
+  async modifyPlanWeek(req, res, next) {
+    try {
+      const userId = req.user.sub;
+      const { planId, weekIndex } = req.params;
+      const { modificationReason } = req.body;
+
+      if (!modificationReason) {
+        throw new AppError('Powód modyfikacji jest wymagany.', 400);
+      }
+      if (isNaN(parseInt(weekIndex))) {
+        throw new AppError('Indeks tygodnia musi być liczbą.', 400);
+      }
+
+      const updatedPlan = await TrainingPlanService.requestWeekModification(
+        userId,
+        planId,
+        parseInt(weekIndex),
+        modificationReason
+      );
+
+      res.status(200).json({
+        status: 'success',
+        message: 'Tydzień w planie został zmodyfikowany.',
+        data: {
+          plan: updatedPlan
+        }
+      });
+    } catch (error) {
+      logError('Błąd podczas modyfikacji tygodnia w planie', error);
+      next(error); // Przekaż błąd do globalnego error handlera
     }
   }
 }

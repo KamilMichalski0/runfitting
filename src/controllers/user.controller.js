@@ -82,7 +82,8 @@ exports.updateProfile = async (req, res, next) => {
       'hasHealthRestrictions',
       'hasAllergies',
       'mainFitnessGoal',
-      'fitnessGoals'
+      'fitnessGoals',
+      'hasFilledRunningForm'
     ];
     
     allowedFields.forEach(field => {

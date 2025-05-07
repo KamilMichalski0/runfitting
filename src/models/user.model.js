@@ -34,6 +34,45 @@ const userSchema = new mongoose.Schema({
     default: true,
     select: false
   },
+  // --- Pola subskrypcji i Stripe ---
+  subscriptionTier: {
+    type: String,
+    enum: ['free', 'basic', 'premium'],
+    default: 'free'
+  },
+  subscriptionValidUntil: {
+    type: Date
+  },
+  stripeCustomerId: {
+    type: String,
+    unique: true,
+    sparse: true, // Umożliwia wiele null, ale unikalne wartości, gdy istnieją
+    index: true
+  },
+  stripeSubscriptionId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true
+  },
+  monthlyModificationsUsed: {
+    daily: {
+      type: Number,
+      default: 0
+    },
+    weekly: {
+      type: Number,
+      default: 0
+    }
+  },
+  freemiumModificationUsed: {
+    type: Boolean,
+    default: false
+  },
+  modificationCountersResetDate: {
+    type: Date
+  },
+  // --- Koniec pól subskrypcji i Stripe ---
   hasFilledRunningForm: { // Nowe pole
     type: Boolean,
     default: false

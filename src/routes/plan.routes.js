@@ -551,4 +551,145 @@ router.post('/regenerate/:formId', trainingPlanController.regeneratePlanFromForm
  */
 router.post('/progress', trainingPlanController.updateProgress);
 
+// --- NOWE TRASY DLA MODYFIKACJI PLANU ---
+
+/**
+ * @swagger
+ * /api/plans/{planId}/weeks/{weekIndex}/days/{dayIndex}/modify:
+ *   put:
+ *     summary: Modyfikuje konkretny dzień w planie treningowym
+ *     tags: [Plany Treningowe]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: planId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID planu treningowego
+ *       - in: path
+ *         name: weekIndex
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           format: int32
+ *         description: Indeks tygodnia (0-based)
+ *       - in: path
+ *         name: dayIndex
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           format: int32
+ *         description: Indeks dnia w tygodniu (0-based)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - modificationReason
+ *             properties:
+ *               modificationReason:
+ *                 type: string
+ *                 description: Powód modyfikacji dnia
+ *                 example: "Potrzebuję lżejszego treningu dzisiaj."
+ *     responses:
+ *       200:
+ *         description: Dzień w planie został zmodyfikowany
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     plan:
+ *                       $ref: '#/components/schemas/Plan' # Zakładając, że zwracany jest cały plan
+ *       400:
+ *         description: Nieprawidłowe dane wejściowe (np. brak powodu, nieprawidłowe indeksy)
+ *       401:
+ *         description: Brak uwierzytelnienia
+ *       404:
+ *         description: Plan treningowy nie znaleziony
+ */
+router.put(
+  '/:planId/weeks/:weekIndex/days/:dayIndex/modify',
+  // TODO: Rozważyć dodanie walidatorów dla parametrów ścieżki i ciała żądania
+  trainingPlanController.modifyPlanDay
+);
+
+/**
+ * @swagger
+ * /api/plans/{planId}/weeks/{weekIndex}/modify:
+ *   put:
+ *     summary: Modyfikuje cały tydzień w planie treningowym
+ *     tags: [Plany Treningowe]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: planId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID planu treningowego
+ *       - in: path
+ *         name: weekIndex
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           format: int32
+ *         description: Indeks tygodnia (0-based)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - modificationReason
+ *             properties:
+ *               modificationReason:
+ *                 type: string
+ *                 description: Powód modyfikacji tygodnia
+ *                 example: "Chcę zamienić trening siłowy na biegowy w tym tygodniu."
+ *     responses:
+ *       200:
+ *         description: Tydzień w planie został zmodyfikowany
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     plan:
+ *                       $ref: '#/components/schemas/Plan' # Zakładając, że zwracany jest cały plan
+ *       400:
+ *         description: Nieprawidłowe dane wejściowe (np. brak powodu, nieprawidłowy indeks)
+ *       401:
+ *         description: Brak uwierzytelnienia
+ *       404:
+ *         description: Plan treningowy nie znaleziony
+ */
+router.put(
+  '/:planId/weeks/:weekIndex/modify',
+  // TODO: Rozważyć dodanie walidatorów dla parametrów ścieżki i ciała żądania
+  trainingPlanController.modifyPlanWeek
+);
+
 module.exports = router; 
