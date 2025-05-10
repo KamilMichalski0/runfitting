@@ -448,7 +448,64 @@ ${Object.entries(safeGet(this.knowledgeBase, 'injuryPrevention.commonInjuries', 
 ### ZALECENIA NAWODNIENIA:
 - Przed treningiem: ${safeGet(safeGet(this.knowledgeBase, 'hydration', {}), 'preRun.guidelines', []).join(', ')}
 - Podczas treningu: ${safeGet(safeGet(this.knowledgeBase, 'hydration', {}), 'duringRun.guidelines', []).join(', ')}
-- Po treningu: ${safeGet(safeGet(this.knowledgeBase, 'hydration', {}), 'postRun.guidelines', []).join(', ')}`;
+- Po treningu: ${safeGet(safeGet(this.knowledgeBase, 'hydration', {}), 'postRun.guidelines', []).join(', ')}
+
+### ĆWICZENIA UZUPEŁNIAJĄCE:
+${Object.entries(safeGet(this.knowledgeBase, 'complementaryExercises', {})).map(([category, data]) => `
+#### ${category.toUpperCase()}:
+${data.description}
+${Object.entries(safeGet(data, 'exercises', {})).map(([exercise, details]) => `
+- ${exercise}:
+  * Opis: ${safeGet(details, 'description', 'brak opisu')}
+  * Technika: ${safeGet(details, 'technique', 'brak techniki')}
+  * Warianty: ${safeGet(details, 'variations', []).join(', ')}
+  * Mięśnie docelowe: ${safeGet(details, 'targetMuscles', []).join(', ')}
+  * Progresja: ${safeGet(details, 'progression', []).join(', ')}
+  * Intensywność: ${safeGet(details, 'intensity', 'nie określono')}
+  * Korzyści: ${safeGet(details, 'benefits', []).join(', ')}
+`).join('\n')}
+`).join('\n')}
+
+### ĆWICZENIA KOREKCYJNE (dla biegaczy po kontuzjach lub z ryzykiem urazów):
+${(() => {
+  const corrective = safeGet(this.knowledgeBase, 'complementaryExercises.correctiveExercises', null);
+  if (!corrective) return 'Brak danych o ćwiczeniach korekcyjnych.';
+  let out = `${corrective.description}\n`;
+  // Kategorie
+  if (corrective.categories) {
+    out += Object.entries(corrective.categories).map(([cat, catData]) => `\n#### ${cat} (${catData.description}):\n` +
+      Object.entries(catData.exercises || {}).map(([ex, exData]) => `- ${ex}: ${exData.description} (Technika: ${exData.technique}; Warianty: ${(exData.variations||[]).join(', ')}; Mięśnie: ${(exData.targetMuscles||[]).join(', ')}; Progresja: ${(exData.progression||[]).join(', ')}; Intensywność: ${exData.intensity}; Korzyści: ${(exData.benefits||[]).join(', ')})`).join('\n')
+    ).join('\n');
+  }
+  // Rekomendacje
+  if (corrective.recommendations) {
+    out += '\nRekomendacje wg poziomu:\n';
+    Object.entries(corrective.recommendations).forEach(([level, rec]) => {
+      out += `- ${level}: częstotliwość: ${rec.frequency}, fokus: ${(rec.focus||[]).join(', ')}, progresja: ${rec.progression}\n`;
+    });
+  }
+  // Specyficzne dla urazów
+  if (corrective.injurySpecific) {
+    out += '\nZalecenia dla typowych urazów:\n';
+    Object.entries(corrective.injurySpecific).forEach(([inj, injData]) => {
+      out += `- ${inj}: fokus: ${(injData.focus||[]).join(', ')}, ćwiczenia: ${(injData.exercises||[]).join(', ')}\n`;
+    });
+  }
+  return out;
+})()}
+
+### CZĘSTOTLIWOŚĆ ĆWICZEŃ (dla poziomu ${userLevel}):
+${Object.entries(safeGet(this.knowledgeBase, 'exerciseFrequency', {})[userLevel] || {}).map(([type, frequency]) => `
+- ${type}: ${frequency}
+`).join('\n')}
+
+### ZASADY PROGRESJI ĆWICZEŃ:
+${safeGet(this.knowledgeBase, 'exerciseProgression.principles', []).map(principle => `- ${principle}`).join('\n')}
+
+### CZYNNIKI PROGRESJI:
+${Object.entries(safeGet(this.knowledgeBase, 'exerciseProgression.progressionFactors', {})).map(([factor, values]) => `
+- ${factor}: ${values.join(', ')}
+`).join('\n')}`;
 
     return `Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Stwórz spersonalizowany plan treningowy na podstawie poniższych informacji o użytkowniku i dostępnej bazie wiedzy.
 

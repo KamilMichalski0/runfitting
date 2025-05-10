@@ -3,6 +3,7 @@ const User = require('../models/user.model');
 const AppError = require('../utils/app-error');
 const heartRateCalculator = require('../algorithms/heart-rate-calculator');
 const paceCalculator = require('../algorithms/pace-calculator');
+const SubscriptionService = require('../services/subscription.service');
 
 /**
  * Pobieranie profilu zalogowanego użytkownika
@@ -319,6 +320,31 @@ exports.checkFirstFormSubmission = async (req, res, next) => {
       data: {
         isFirstSubmission: isFirstSubmission
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Pobiera informacje o limitach subskrypcji użytkownika.
+ * @param {Object} req - Obiekt żądania Express
+ * @param {Object} res - Obiekt odpowiedzi Express
+ * @param {Function} next - Funkcja next Express
+ */
+exports.getSubscriptionLimits = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.sub) {
+      return next(new AppError('Użytkownik nie uwierzytelniony.', 401));
+    }
+    const userId = req.user.sub;
+
+    const subscriptionService = new SubscriptionService(); // Create an instance
+    const limitsData = await subscriptionService.getUserSubscriptionDetails(userId);
+
+    res.status(200).json({
+      status: 'success',
+      data: limitsData,
     });
   } catch (error) {
     next(error);

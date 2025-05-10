@@ -157,6 +157,9 @@ router.put('/me/training-history', supabaseAuth, validateTrainingHistory, userCo
 router.get('/me/heart-rate-zones', supabaseAuth, userController.getHeartRateZones);
 router.get('/me/training-paces', supabaseAuth, userController.getTrainingPaces);
 
+// Nowa trasa do pobierania limitów subskrypcji
+router.get('/me/subscription-limits', supabaseAuth, userController.getSubscriptionLimits);
+
 // Chronione endpointy (autoryzacja globalna przez supabaseAuth)
 /**
  * @swagger

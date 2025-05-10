@@ -474,6 +474,349 @@ const runningKnowledgeBase = {
         'include carbohydrates for glycogen replenishment'
       ]
     }
+  },
+
+  // Complementary exercises for runners
+  complementaryExercises: {
+    lowerBodyStrength: {
+      description: 'Exercises targeting lower body muscles essential for running',
+      exercises: {
+        squats: {
+          description: 'Basic squat movement',
+          technique: 'Stand with feet shoulder-width apart, lower hips back and down as if sitting in a chair',
+          variations: ['sumo squats', 'bulgarian split squats', 'single-leg squats'],
+          targetMuscles: ['quadriceps', 'glutes', 'hamstrings', 'calves'],
+          progression: ['bodyweight', 'dumbbells', 'barbell', 'increased depth'],
+          intensity: 'moderate to high',
+          benefits: ['builds functional strength', 'improves joint range of motion', 'corrects muscle imbalances']
+        },
+        lunges: {
+          description: 'Forward stepping movement',
+          technique: 'Step forward, lower body until both knees are at 90 degrees, return to start',
+          variations: ['reverse lunges', 'walking lunges', 'bulgarian lunges'],
+          targetMuscles: ['quadriceps', 'glutes', 'hamstrings'],
+          progression: ['bodyweight', 'dumbbells', 'barbell', 'increased range'],
+          intensity: 'moderate',
+          benefits: ['improves balance', 'enhances coordination', 'builds unilateral strength']
+        },
+        deadlifts: {
+          description: 'Hip hinge movement',
+          technique: 'Stand with feet hip-width apart, hinge at hips while keeping back straight',
+          variations: ['romanian deadlifts', 'single-leg deadlifts'],
+          targetMuscles: ['glutes', 'hamstrings', 'lower back', 'core'],
+          progression: ['bodyweight', 'dumbbells', 'barbell', 'increased weight'],
+          intensity: 'high',
+          benefits: ['strengthens posterior chain', 'improves running power', 'prevents injuries']
+        },
+        calfRaises: {
+          description: 'Ankle plantar flexion movement',
+          technique: 'Stand on edge of step, raise heels up and lower down',
+          variations: ['single-leg calf raises', 'weighted calf raises'],
+          targetMuscles: ['gastrocnemius', 'soleus'],
+          progression: ['bodyweight', 'dumbbells', 'increased reps'],
+          intensity: 'moderate',
+          benefits: ['improves push-off power', 'prevents lower leg injuries']
+        }
+      }
+    },
+    coreStrength: {
+      description: 'Exercises targeting core muscles for stability and power transfer',
+      exercises: {
+        plank: {
+          description: 'Static core hold',
+          technique: 'Hold push-up position on forearms, maintain straight body line',
+          variations: ['side plank', 'plank with leg lift', 'plank with arm reach'],
+          targetMuscles: ['rectus abdominis', 'obliques', 'transverse abdominis'],
+          progression: ['time duration', 'added movements', 'unstable surface'],
+          intensity: 'moderate',
+          benefits: ['improves core stability', 'enhances posture', 'prevents back pain']
+        },
+        birdDog: {
+          description: 'Dynamic core stabilization',
+          technique: 'On hands and knees, extend opposite arm and leg while maintaining balance',
+          variations: ['with resistance band', 'with weight'],
+          targetMuscles: ['core', 'lower back', 'glutes'],
+          progression: ['time duration', 'added resistance', 'increased range'],
+          intensity: 'low to moderate',
+          benefits: ['improves balance', 'enhances coordination', 'strengthens core']
+        }
+      }
+    },
+    plyometric: {
+      description: 'Explosive movements to develop power and speed',
+      exercises: {
+        squatJumps: {
+          description: 'Explosive vertical jump from squat position',
+          technique: 'Squat down then explosively jump upward, land softly',
+          variations: ['box jumps', 'depth jumps'],
+          targetMuscles: ['quadriceps', 'glutes', 'calves'],
+          progression: ['height of jump', 'number of reps', 'added weight'],
+          intensity: 'high',
+          benefits: ['develops explosive power', 'improves running economy']
+        },
+        bounding: {
+          description: 'Exaggerated running strides',
+          technique: 'Perform exaggerated running steps with focus on height and distance',
+          variations: ['single-leg bounds', 'lateral bounds'],
+          targetMuscles: ['quadriceps', 'glutes', 'hamstrings', 'calves'],
+          progression: ['distance', 'height', 'speed'],
+          intensity: 'high',
+          benefits: ['improves stride length', 'develops power', 'enhances running form']
+        }
+      }
+    },
+    mobility: {
+      description: 'Exercises to improve joint range of motion and flexibility',
+      exercises: {
+        legSwings: {
+          description: 'Dynamic hip mobility',
+          technique: 'Swing leg forward and backward, then side to side',
+          variations: ['with resistance band', 'increased range'],
+          targetMuscles: ['hip flexors', 'hamstrings', 'adductors'],
+          progression: ['range of motion', 'speed', 'added resistance'],
+          intensity: 'low',
+          benefits: ['improves hip mobility', 'reduces injury risk', 'enhances stride']
+        },
+        hipOpeners: {
+          description: 'Hip joint mobility exercises',
+          technique: 'Various movements to increase hip range of motion',
+          variations: ['figure four stretch', 'pigeon pose', 'lizard pose'],
+          targetMuscles: ['hip rotators', 'glutes', 'adductors'],
+          progression: ['hold duration', 'depth of stretch'],
+          intensity: 'low',
+          benefits: ['improves hip flexibility', 'reduces tightness', 'enhances running form']
+        }
+      }
+    },
+    balance: {
+      description: 'Exercises to improve stability and proprioception',
+      exercises: {
+        singleLegBalance: {
+          description: 'Static balance on one leg',
+          technique: 'Stand on one leg, maintain balance',
+          variations: ['eyes closed', 'on unstable surface', 'with movement'],
+          targetMuscles: ['ankle stabilizers', 'core', 'hip stabilizers'],
+          progression: ['duration', 'surface difficulty', 'added movement'],
+          intensity: 'low to moderate',
+          benefits: ['improves balance', 'enhances proprioception', 'prevents ankle injuries']
+        },
+        dynamicBalance: {
+          description: 'Balance exercises with movement',
+          technique: 'Perform movements while maintaining balance on one leg',
+          variations: ['single leg squats', 'single leg deadlifts'],
+          targetMuscles: ['ankle stabilizers', 'core', 'hip stabilizers'],
+          progression: ['movement complexity', 'added resistance'],
+          intensity: 'moderate',
+          benefits: ['improves dynamic stability', 'enhances running form']
+        }
+      }
+    },
+    correctiveExercises: {
+      description: 'Exercises designed to address specific running-related injuries and imbalances',
+      categories: {
+        strengthAndActivation: {
+          description: 'Exercises focusing on muscle strengthening and activation',
+          exercises: {
+            gluteActivation: {
+              description: 'Exercises to improve gluteal muscle activation and strength',
+              technique: 'Focus on proper form and mind-muscle connection',
+              variations: ['glute bridges', 'clamshells', 'fire hydrants', 'donkey kicks'],
+              targetMuscles: ['gluteus maximus', 'gluteus medius', 'gluteus minimus'],
+              progression: ['bodyweight', 'resistance bands', 'added weight'],
+              intensity: 'moderate',
+              benefits: ['improves hip stability', 'reduces knee pain', 'enhances running form']
+            },
+            coreStability: {
+              description: 'Exercises to improve core stability and control',
+              technique: 'Maintain neutral spine position throughout movement',
+              variations: ['dead bugs', 'bird dogs', 'pallof presses', 'anti-rotation exercises'],
+              targetMuscles: ['transverse abdominis', 'multifidus', 'obliques'],
+              progression: ['static holds', 'dynamic movements', 'added resistance'],
+              intensity: 'moderate',
+              benefits: ['improves posture', 'reduces back pain', 'enhances running efficiency']
+            },
+            hipStability: {
+              description: 'Exercises to improve hip stability and control',
+              technique: 'Focus on controlled movement and proper alignment',
+              variations: ['single leg balance', 'hip airplanes', 'monster walks', 'lateral band walks'],
+              targetMuscles: ['hip abductors', 'hip external rotators', 'hip stabilizers'],
+              progression: ['bodyweight', 'resistance bands', 'unstable surface'],
+              intensity: 'moderate',
+              benefits: ['reduces IT band issues', 'improves running form', 'prevents knee pain']
+            }
+          }
+        },
+        stabilization: {
+          description: 'Exercises focusing on joint stability and control',
+          exercises: {
+            ankleStability: {
+              description: 'Exercises to improve ankle stability and control',
+              technique: 'Maintain proper alignment and controlled movement',
+              variations: ['single leg balance', 'ankle circles', 'alphabet writing', 'heel-toe walks'],
+              targetMuscles: ['ankle stabilizers', 'intrinsic foot muscles'],
+              progression: ['stable surface', 'unstable surface', 'eyes closed'],
+              intensity: 'low to moderate',
+              benefits: ['reduces ankle sprains', 'improves balance', 'enhances running form']
+            },
+            kneeStability: {
+              description: 'Exercises to improve knee stability and control',
+              technique: 'Focus on proper alignment and controlled movement',
+              variations: ['step-ups', 'step-downs', 'wall slides', 'terminal knee extensions'],
+              targetMuscles: ['quadriceps', 'hamstrings', 'VMO'],
+              progression: ['bodyweight', 'added resistance', 'unstable surface'],
+              intensity: 'moderate',
+              benefits: ['reduces knee pain', 'improves running form', 'prevents injuries']
+            }
+          }
+        },
+        mobility: {
+          description: 'Exercises focusing on joint mobility and flexibility',
+          exercises: {
+            hipMobility: {
+              description: 'Exercises to improve hip mobility and range of motion',
+              technique: 'Focus on controlled movement and proper breathing',
+              variations: ['hip circles', 'leg swings', 'hip openers', 'pigeon pose'],
+              targetMuscles: ['hip flexors', 'hip rotators', 'adductors'],
+              progression: ['dynamic', 'static holds', 'added resistance'],
+              intensity: 'low to moderate',
+              benefits: ['improves running stride', 'reduces hip pain', 'enhances flexibility']
+            },
+            ankleMobility: {
+              description: 'Exercises to improve ankle mobility and range of motion',
+              technique: 'Maintain proper alignment and controlled movement',
+              variations: ['ankle dorsiflexion', 'ankle plantarflexion', 'calf stretches', 'ankle circles'],
+              targetMuscles: ['calf muscles', 'ankle stabilizers'],
+              progression: ['bodyweight', 'added resistance', 'dynamic movements'],
+              intensity: 'low',
+              benefits: ['improves running form', 'reduces calf tightness', 'prevents injuries']
+            }
+          }
+        },
+        stretching: {
+          description: 'Exercises focusing on muscle flexibility and length',
+          exercises: {
+            dynamicStretching: {
+              description: 'Dynamic stretching exercises for warm-up',
+              technique: 'Perform controlled movements through full range of motion',
+              variations: ['leg swings', 'arm circles', 'hip circles', 'ankle mobility'],
+              targetMuscles: ['major muscle groups'],
+              progression: ['small range', 'full range', 'added resistance'],
+              intensity: 'low',
+              benefits: ['improves mobility', 'reduces injury risk', 'enhances performance']
+            },
+            staticStretching: {
+              description: 'Static stretching exercises for cool-down',
+              technique: 'Hold stretches for 20-30 seconds with proper breathing',
+              variations: ['calf stretches', 'hamstring stretches', 'quad stretches', 'hip flexor stretches'],
+              targetMuscles: ['major muscle groups'],
+              progression: ['short holds', 'longer holds', 'deeper stretches'],
+              intensity: 'low',
+              benefits: ['improves flexibility', 'reduces muscle tightness', 'enhances recovery']
+            }
+          }
+        },
+        selfRelaxation: {
+          description: 'Techniques for muscle relaxation and recovery',
+          exercises: {
+            foamRolling: {
+              description: 'Self-myofascial release using foam roller',
+              technique: 'Roll slowly over tight areas, pausing on tender spots',
+              variations: ['calf rolling', 'IT band rolling', 'quad rolling', 'glute rolling'],
+              targetMuscles: ['major muscle groups'],
+              progression: ['soft roller', 'firm roller', 'textured roller'],
+              intensity: 'low to moderate',
+              benefits: ['reduces muscle tightness', 'improves recovery', 'enhances mobility']
+            },
+            massage: {
+              description: 'Self-massage techniques for muscle recovery',
+              technique: 'Apply pressure to tight areas using hands or tools',
+              variations: ['calf massage', 'foot massage', 'glute massage', 'hamstring massage'],
+              targetMuscles: ['major muscle groups'],
+              progression: ['light pressure', 'moderate pressure', 'deep pressure'],
+              intensity: 'low to moderate',
+              benefits: ['reduces muscle tension', 'improves recovery', 'enhances flexibility']
+            }
+          }
+        }
+      },
+      recommendations: {
+        beginner: {
+          frequency: '2-3 times per week',
+          focus: ['basic strength', 'mobility', 'stretching'],
+          progression: 'Start with basic exercises and gradually increase complexity'
+        },
+        intermediate: {
+          frequency: '3-4 times per week',
+          focus: ['strength', 'stability', 'mobility', 'stretching'],
+          progression: 'Add resistance and complexity to exercises'
+        },
+        advanced: {
+          frequency: '4-5 times per week',
+          focus: ['advanced strength', 'stability', 'mobility', 'stretching', 'self-relaxation'],
+          progression: 'Combine exercises and add advanced variations'
+        }
+      },
+      injurySpecific: {
+        runnersKnee: {
+          focus: ['quadriceps strength', 'hip stability', 'IT band mobility'],
+          exercises: ['step-downs', 'clamshells', 'IT band rolling', 'quad stretches']
+        },
+        shinSplints: {
+          focus: ['calf strength', 'ankle stability', 'foot mobility'],
+          exercises: ['calf raises', 'ankle mobility', 'foot strengthening', 'calf stretches']
+        },
+        plantarFasciitis: {
+          focus: ['foot strength', 'calf flexibility', 'arch support'],
+          exercises: ['foot rolling', 'calf stretches', 'towel curls', 'arch strengthening']
+        },
+        itbSyndrome: {
+          focus: ['hip stability', 'glute strength', 'IT band mobility'],
+          exercises: ['clamshells', 'hip airplanes', 'IT band rolling', 'glute bridges']
+        }
+      }
+    }
+  },
+
+  // Exercise frequency recommendations
+  exerciseFrequency: {
+    beginner: {
+      lowerBodyStrength: '1-2 times/week',
+      coreStrength: '2 times/week',
+      plyometric: 'none',
+      mobility: 'daily',
+      balance: '2-3 times/week'
+    },
+    intermediate: {
+      lowerBodyStrength: '2 times/week',
+      coreStrength: '2-3 times/week',
+      plyometric: '1 time/week',
+      mobility: 'daily',
+      balance: '3 times/week'
+    },
+    advanced: {
+      lowerBodyStrength: '2-3 times/week',
+      coreStrength: '3 times/week',
+      plyometric: '1-2 times/week',
+      mobility: 'daily',
+      balance: '3-4 times/week'
+    }
+  },
+
+  // Exercise progression guidelines
+  exerciseProgression: {
+    principles: [
+      'Master technique before increasing intensity',
+      'Progress gradually in small increments',
+      'Maintain proper form throughout progression',
+      'Allow adequate recovery between sessions',
+      'Listen to body signals and adjust accordingly'
+    ],
+    progressionFactors: {
+      intensity: ['bodyweight', 'added resistance', 'increased range of motion'],
+      volume: ['repetitions', 'sets', 'duration'],
+      complexity: ['basic movement', 'variations', 'combined movements'],
+      stability: ['stable surface', 'unstable surface', 'dynamic movements']
+    }
   }
 };
 

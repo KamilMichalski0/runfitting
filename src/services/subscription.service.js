@@ -154,6 +154,73 @@ class SubscriptionService {
   log(message, data) {
     console.log(`[SubscriptionService] ${message}`, data !== undefined ? data : '');
   }
+
+  /**
+   * Pobiera szczegółowe informacje o subskrypcji użytkownika, w tym limity i użycie.
+   * @param {string} userId - ID użytkownika (Supabase ID).
+   * @returns {Promise<Object>} Obiekt ze szczegółami subskrypcji.
+   */
+  async getUserSubscriptionDetails(userId) {
+    const user = await User.findOne({ supabaseId: userId });
+    if (!user) {
+      throw new AppError('Użytkownik nie znaleziony.', 404);
+    }
+
+    const tier = user.subscriptionTier || 'free'; // Domyślnie free, jeśli brak
+    const tierConfig = subscriptionConfig.getTierConfig(tier);
+
+    if (!tierConfig) {
+      // To nie powinno się zdarzyć, jeśli user.subscriptionTier ma enum i default
+      throw new AppError('Nieznany lub nieprawidłowy tier subskrypcji użytkownika.', 500);
+    }
+
+    let dailyModificationsUsed = 0;
+    let weeklyModificationsUsed = 0;
+    let dailyLimitConfig = 0;
+    let weeklyLimitConfig = 0;
+
+    if (tier === 'free') {
+      dailyModificationsUsed = user.freemiumModificationUsed ? 1 : 0;
+      dailyLimitConfig = tierConfig.totalDailyModifications !== undefined ? tierConfig.totalDailyModifications : 0;
+      weeklyLimitConfig = 0; // Free tier typically has no weekly modifications
+    } else if (tier === 'basic' || tier === 'premium') {
+      // Upewnij się, że monthlyModificationsUsed istnieje i ma poprawne pola
+      dailyModificationsUsed = (user.monthlyModificationsUsed && typeof user.monthlyModificationsUsed.daily === 'number') 
+                               ? user.monthlyModificationsUsed.daily 
+                               : 0;
+      weeklyModificationsUsed = (user.monthlyModificationsUsed && typeof user.monthlyModificationsUsed.weekly === 'number') 
+                                ? user.monthlyModificationsUsed.weekly 
+                                : 0;
+      dailyLimitConfig = tierConfig.monthlyDailyModifications !== undefined ? tierConfig.monthlyDailyModifications : 0;
+      weeklyLimitConfig = tierConfig.monthlyWeeklyModifications !== undefined ? tierConfig.monthlyWeeklyModifications : 0;
+    }
+
+    const formatLimit = (limit) => (limit === Infinity || limit === 'Infinity' ? 'unlimited' : limit);
+    
+    const calculateRemaining = (used, limitVal) => {
+      if (limitVal === Infinity || limitVal === 'Infinity') return 'unlimited';
+      const numericLimit = Number(limitVal);
+      if (isNaN(numericLimit)) return 0; // Fallback if limit is not a number or Infinity
+      return Math.max(0, numericLimit - used);
+    };
+
+    return {
+      currentTier: tier,
+      subscriptionValidUntil: user.subscriptionValidUntil,
+      dailyModifications: {
+        used: dailyModificationsUsed,
+        limit: formatLimit(dailyLimitConfig),
+        remaining: calculateRemaining(dailyModificationsUsed, dailyLimitConfig),
+      },
+      weeklyModifications: {
+        used: weeklyModificationsUsed,
+        limit: formatLimit(weeklyLimitConfig),
+        remaining: calculateRemaining(weeklyModificationsUsed, weeklyLimitConfig),
+      },
+      freemiumModificationUsed: tier === 'free' ? user.freemiumModificationUsed : undefined,
+      modificationCountersResetDate: (tier === 'basic' || tier === 'premium') ? user.modificationCountersResetDate : undefined,
+    };
+  }
 }
 
 module.exports = SubscriptionService; 
