@@ -642,6 +642,8 @@ KRYTYCZNE WYMAGANIA:
 13. Wykorzystaj wiedzę z bazy wiedzy do stworzenia optymalnego planu treningowego
 14. Uwzględnij fazy treningowe i zasady progresji z bazy wiedzy
 15. Dostosuj plan do specyficznych wymagań dystansu docelowego
+16. Sekcja \`corrective_exercises\` w odpowiedzi JSON powinna być generowana z odpowiednimi ćwiczeniami TYLKO WTEDY, gdy użytkownik zgłosił kontuzję (patrz sekcja \`INFORMACJE O ZDROWIU\`). Jeśli użytkownik NIE zgłosił kontuzji, pole \`corrective_exercises\` powinno zawierać informację o braku potrzeby ich stosowania (np. pole \`frequency\` ustawione na "Nie dotyczy - brak zgłoszonych kontuzji" i pusta tablica \`list\`). W przypadku zgłoszonej kontuzji, dobierz ćwiczenia z sekcji \`### ĆWICZENIA KOREKCYJNE\` z bazy wiedzy, adekwatne do opisanego problemu.
+17. Długość tablicy \`plan_weeks\` (liczba faktycznie wygenerowanych tygodni w planie) MUSI być zgodna z wartością podaną w \`Planowany czas trwania planu: X tygodni\` w sekcji \`DANE UŻYTKOWNIKA\`. Pole \`metadata.duration_weeks\` również musi odzwierciedlać tę liczbę. Nie skracaj planu bez wyraźnego powodu wynikającego z innych ograniczeń.
 
 WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika i wykorzystujący wiedzę z bazy wiedzy. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON. Nie używaj cudzysłowów w nazwach pól.
 Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wzór struktury JSON. NIE KOPIUJ zawartości tego przykładu. Wygeneruj całkowicie nowy, unikalny plan dostosowany do danych użytkownika.`;
