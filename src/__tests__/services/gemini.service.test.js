@@ -988,6 +988,89 @@ describe('GeminiService', () => {
         throw error; // Keep throwing for better visibility
       }
     });
+
+    it('powinien wygenerować plan treningowy z poprawnymi datami, gdy podano planStartDate (E2E)', async () => {
+      console.log('\n--- E2E Test (with Dates) Start ---');
+      if (!process.env.GEMINI_API_KEY) {
+        console.log('\n!!! Skipping E2E test (with Dates): GEMINI_API_KEY is not set. !!!');
+        return;
+      }
+
+      // Ustaw datę startu planu na przyszły poniedziałek
+      const today = new Date();
+      const nextMonday = new Date(today);
+      nextMonday.setDate(today.getDate() + ( (1 + 7 - today.getDay()) % 7 || 7) ); // Znajdź następny poniedziałek
+      const planStartDateString = `${nextMonday.getFullYear()}-${(nextMonday.getMonth() + 1).toString().padStart(2, '0')}-${nextMonday.getDate().toString().padStart(2, '0')}`;
+
+      const userDataWithDate = {
+        imieNazwisko: "Test User With Dates",
+        wiek: 33,
+        plec: "Kobieta",
+        wzrost: 165,
+        masaCiala: 60,
+        glownyCel: "zaczac_biegac",
+        poziomZaawansowania: "poczatkujacy",
+        dniTreningowe: ["poniedziałek", "środa", "piątek"], // Ważne, aby pierwszy dzień pasował do logiki daty startu
+        czasTreningu: 45,
+        preferowanyCzasTreningu: "wieczor",
+        planStartDate: planStartDateString, // Data startu planu
+        // raceDate: Można dodać, aby przetestować generowanie do daty zawodów
+      };
+
+      try {
+        console.log(`--- E2E (with Dates) Calling API with planStartDate: ${planStartDateString} ---`);
+        const result = await geminiService.generateTrainingPlan(userDataWithDate);
+
+        expect(result).toBeDefined();
+        expect(result.metadata).toBeDefined();
+        expect(result.plan_weeks).toBeDefined();
+        expect(Array.isArray(result.plan_weeks)).toBe(true);
+        expect(result.plan_weeks.length).toBeGreaterThan(0);
+
+        const firstWeek = result.plan_weeks[0];
+        expect(firstWeek.days).toBeDefined();
+        expect(Array.isArray(firstWeek.days)).toBe(true);
+        expect(firstWeek.days.length).toBeGreaterThan(0);
+
+        // Sprawdzenie pierwszego dnia treningowego
+        const firstTrainingDay = firstWeek.days[0];
+        expect(firstTrainingDay.date).toBeDefined();
+        expect(firstTrainingDay.date).toMatch(/^\d{4}-\d{2}-\d{2}$/); // Format YYYY-MM-DD
+        
+        // Data pierwszego treningu powinna być równa lub późniejsza niż planStartDate
+        // i być dniem określonym w dniTreningowe (tutaj poniedziałek)
+        const expectedFirstDate = new Date(planStartDateString);
+        const actualFirstDate = new Date(firstTrainingDay.date);
+        
+        expect(actualFirstDate.toISOString().split('T')[0]).toBe(planStartDateString);
+        expect(firstTrainingDay.day_name.toLowerCase()).toBe(userDataWithDate.dniTreningowe[0].toLowerCase());
+
+        // Sprawdzenie sekwencyjności i formatu dat w pierwszym tygodniu
+        let previousDate = null;
+        for (const day of firstWeek.days) {
+          expect(day.date).toBeDefined();
+          expect(day.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+          const currentDate = new Date(day.date);
+          if (previousDate) {
+            expect(currentDate > previousDate).toBe(true);
+          }
+          previousDate = currentDate;
+        }
+
+        // Sprawdzenie, czy wszystkie dni mają daty
+        for (const week of result.plan_weeks) {
+          for (const day of week.days) {
+            expect(day.date).toBeDefined();
+            expect(day.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+          }
+        }
+
+      } catch (error) {
+        console.error('E2E Test (with Dates) Error:', error);
+        throw error;
+      }
+    });
+
   });
 
   // --- OpenAI End-to-End Test (Requires OPENAI_API_KEY) --- //

@@ -166,7 +166,11 @@ class GeminiService {
           data: geminiError.response?.data,
           stack: geminiError.stack
         });
-        // Jeśli Gemini zawiedzie, przechodzimy do OpenAI (jeśli skonfigurowane)
+        // Jeśli Gemini zawiedzie ORAZ OpenAI nie jest dostępne, rzuć błąd
+        if (!this.openai) {
+          throw new AppError(`Nie udało się wygenerować planu treningowego: ${geminiError.message}`, geminiError.response?.status || 500);
+        }
+        // W przeciwnym razie, przechodzimy do OpenAI (jeśli skonfigurowane)
       }
     } else {
       this.log('Klucz API Gemini nie jest ustawiony, pomijanie próby Gemini.');
@@ -187,14 +191,24 @@ class GeminiService {
                 data: openaiError.response?.data,
                 stack: openaiError.stack
             });
-            // Jeśli OpenAI również zawiedzie, przechodzimy do domyślnego planu
+            // Jeśli OpenAI również zawiedzie, rzuć błąd przed przejściem do domyślnego planu
+            throw new AppError(`Nie udało się wygenerować planu treningowego po fallbacku do OpenAI: ${openaiError.message}`, openaiError.response?.status || 500);
         }
     } else {
         this.log('OpenAI nie skonfigurowane, pomijanie próby fallbacku OpenAI.');
+        // Jeśli Gemini nie zadziałało i OpenAI nie jest skonfigurowane, a doszliśmy tutaj,
+        // to znaczy, że błąd Gemini nie został rzucony (bo this.openai było fałszywe w bloku catch Gemini)
+        // lub klucz Gemini nie był ustawiony. W tej sytuacji, jeśli nie ma klucza Gemini i nie ma OpenAI,
+        // a użytkownik oczekuje planu, rzucenie błędu tutaj może być zbyt wczesne.
+        // Logika testu powinna to uwzględnić.
+        // Jednak jeśli Gemini API key był, ale zawiódł, i nie ma OpenAI, błąd powinien być już rzucony wyżej.
     }
 
     // 3. Fallback to default plan if both APIs fail or are not configured
-    this.log('\n--- GENEROWANIE PLANU DOMYŚLNEGO (FALLBACK) ---');
+    // Ten kod zostanie osiągnięty tylko jeśli:
+    //    a) Klucz Gemini nie jest ustawiony ORAZ OpenAI nie jest skonfigurowane.
+    //    b) Poprzednie bloki catch nie rzuciły błędu (co nie powinno się zdarzyć po modyfikacji).
+    this.log('\n--- GENEROWANIE PLANU DOMYŚLNEGO (FALLBACK OSTATECZNY) ---');
     let trainingPlan = this._createDefaultTrainingPlan(userData);
 
     // Generate and merge corrective exercises if injuries are reported
@@ -242,6 +256,11 @@ class GeminiService {
   }
 
   _createPrompt(userData) {
+    // Logowanie surowych danych wejściowych dotyczących dat
+    this.log('GeminiService._createPrompt - Otrzymane dane wejściowe userData:', JSON.stringify(userData, null, 2));
+    this.log(`GeminiService._createPrompt - Surowa wartość planStartDate: ${userData.planStartDate}`);
+    this.log(`GeminiService._createPrompt - Surowa wartość raceDate: ${userData.raceDate}`);
+
     // Definicja funkcji safeGet na początku metody
     const safeGet = (obj, path, defaultValue = 'nie określono') => {
       try {
@@ -300,46 +319,84 @@ class GeminiService {
     const daysPerWeekInfo = `Preferowana liczba dni treningowych w tygodniu: ${userData.dniTreningowe ? userData.dniTreningowe.length : 'nie podano'}`;
     const weeklyKilometersInfo = `Obecny tygodniowy kilometraż: ${userData.aktualnyKilometrTygodniowy || 'nie podano'} km`;
     
-    // Określenie czasu trwania planu na podstawie głównego celu
-    let planDuration = 8; // domyślnie 8 tygodni
-    const mainGoal = userData.glownyCel;
-    const targetDistanceGoal = userData.dystansDocelowy;
+    // Określenie czasu trwania planu - NOWA LOGIKA
+    const raceDateString = userData.raceDate;
+    const planStartDateString = userData.planStartDate;
 
-    switch (mainGoal) {
-      case 'redukcja_masy_ciala':
-      case 'aktywny_tryb_zycia':
-      case 'zmiana_nawykow':
-      case 'powrot_po_kontuzji':
-      case 'poprawa_kondycji':
-      case 'inny_cel':
-        planDuration = 8;
-        break;
-      case 'zaczac_biegac':
-        planDuration = 6;
-        break;
-      case 'przebiegniecie_dystansu':
-        // Użyj zmiennej o zmienionej nazwie
-        switch (targetDistanceGoal) {
-          case '5km':
-            planDuration = 6;
-            break;
-          case '10km':
-            planDuration = 8;
-            break;
-          case 'polmaraton':
-            planDuration = 12;
-            break;
-          case 'maraton':
-            planDuration = 16;
-            break;
-          default: // inny dystans lub brak
-            planDuration = 8;
-            break;
+    let planDuration; // in weeks
+    let raceDateInfo = '';
+    let planStartDateInfo = '';
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let effectivePlanStartDate = today;
+    if (planStartDateString) {
+        const parsedPlanStartDate = new Date(planStartDateString);
+        parsedPlanStartDate.setHours(0,0,0,0);
+        if (!isNaN(parsedPlanStartDate.getTime())) {
+            planStartDateInfo = `Preferowana data rozpoczęcia planu: ${planStartDateString}.`;
+            if (parsedPlanStartDate >= today) {
+                effectivePlanStartDate = parsedPlanStartDate;
+            } else {
+                planStartDateInfo += ` (Uwaga: podana data rozpoczęcia jest w przeszłości, plan rozpocznie się od najbliższego możliwego terminu).`;
+            }
+        } else {
+            planStartDateInfo = `Preferowana data rozpoczęcia planu: ${planStartDateString} (Uwaga: nieprawidłowy format daty).`;
         }
-        break;
-      default:
-        planDuration = 8; // Domyślna wartość, jeśli cel nieznany
-        break;
+    }
+
+    if (raceDateString) {
+        const parsedRaceDate = new Date(raceDateString);
+        parsedRaceDate.setHours(0,0,0,0);
+        if (!isNaN(parsedRaceDate.getTime())) {
+            if (parsedRaceDate > effectivePlanStartDate) {
+                const diffTime = parsedRaceDate.getTime() - effectivePlanStartDate.getTime();
+                // Add 1 day to diffDays to ensure the week of the race is included.
+                // Example: race on Sunday, start on Monday of the same week = 6 days diff -> 1 week plan.
+                // race on Monday, start on Monday of same week = 0 days diff -> 1 week plan.
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) +1; // +1 to ensure race week is part of duration
+                planDuration = Math.max(1, Math.ceil(diffDays / 7));
+                raceDateInfo = `Data zawodów docelowych: ${raceDateString}. Plan zostanie dostosowany, aby zakończyć się w tygodniu zawodów.`;
+            } else {
+                raceDateInfo = `Data zawodów docelowych: ${raceDateString} (Uwaga: data zawodów jest w przeszłości lub zbyt blisko daty startu. Czas trwania planu zostanie obliczony domyślnie).`;
+            }
+        } else {
+            raceDateInfo = `Data zawodów docelowych: ${raceDateString} (Uwaga: nieprawidłowy format daty. Czas trwania planu zostanie obliczony domyślnie).`;
+        }
+    }
+
+    if (planDuration === undefined) {
+        const mainGoal = userData.glownyCel;
+        // Użyj zmiennej o zmienionej nazwie
+        const targetDistanceGoal = userData.dystansDocelowy; 
+        planDuration = 8; // default
+        switch (mainGoal) {
+            case 'redukcja_masy_ciala':
+            case 'aktywny_tryb_zycia':
+            case 'zmiana_nawykow':
+            case 'powrot_po_kontuzji':
+            case 'poprawa_kondycji':
+            case 'inny_cel':
+                planDuration = 8;
+                break;
+            case 'zaczac_biegac':
+                planDuration = 6;
+                break;
+            case 'przebiegniecie_dystansu':
+                // Użyj zmiennej o zmienionej nazwie
+                switch (targetDistanceGoal) {
+                    case '5km': planDuration = 6; break;
+                    case '10km': planDuration = 8; break;
+                    case 'polmaraton': planDuration = 12; break;
+                    case 'maraton': planDuration = 16; break;
+                    default: planDuration = 8; break;
+                }
+                break;
+            default:
+                planDuration = 8;
+                break;
+        }
     }
 
     const planDurationInfo = `Planowany czas trwania planu: ${planDuration} tygodni`;
@@ -382,7 +439,7 @@ class GeminiService {
     }
     
     const healthInfoText = healthInfo.length > 0 
-      ? healthInfo.join('\n')
+      ? healthInfo.join('\\n')
       : 'Brak zgłoszonych problemów zdrowotnych';
     
     let goalsInfo = [];
@@ -416,11 +473,23 @@ class GeminiService {
     }
     
     const goalsInfoText = goalsInfo.length > 0 
-      ? goalsInfo.join('\n')
+      ? goalsInfo.join('\\n')
       : 'Brak dodatkowych celów i preferencji';
 
-    // Pobranie przykładowego planu
-    const examplePlan = getExamplePlanTemplate(userData);
+    // Przygotowanie danych dla getExamplePlanTemplate
+    const templateMatcherUserData = {
+      experienceLevel: userData.poziomZaawansowania, // Mapowanie z polskiego na angielski
+      mainGoal: userData.glownyCel,               // Mapowanie z polskiego na angielski
+      daysPerWeek: userData.dniTreningowe ? userData.dniTreningowe.length : undefined, // Liczba dni
+      injuries: userData.kontuzje,                // Bezpośrednie użycie
+      // Dodaj inne pola, jeśli getExamplePlanTemplate ich używa
+      // np. dystansDocelowy, jeśli jest relevantny dla wyboru szablonu
+      dystansDocelowy: userData.dystansDocelowy 
+    };
+    this.log('Dane przekazywane do getExamplePlanTemplate:', templateMatcherUserData);
+
+    // Pobranie przykładowego planu - PRZENIESIONE TUTAJ
+    const examplePlan = getExamplePlanTemplate(templateMatcherUserData); // Użyj zmapowanych danych
     let examplePlanSection = ''; 
     if (examplePlan) {
       try {
@@ -452,12 +521,12 @@ ${examplePlanJson}`;
     }
 
     // Określenie dystansu docelowego z nowego schematu
-    const targetDistance = goalToKnowledgeMap[userData.glownyCel] || 'general_fitness';
-    const distanceKnowledge = safeGet(this.knowledgeBase, `distances.${targetDistance}`, {}); 
+    const targetDistanceKnowledgeKey = goalToKnowledgeMap[userData.glownyCel] || 'general_fitness';
+    const distanceKnowledge = safeGet(this.knowledgeBase, `distances.${targetDistanceKnowledgeKey}`, {}); 
     const userLevel = userData.poziomZaawansowania || 'poczatkujacy';
 
     const knowledgeBaseInfo = `
-### BAZA WIEDZY DLA DYSTANSU ${targetDistance.toUpperCase()}:
+### BAZA WIEDZY DLA DYSTANSU ${targetDistanceKnowledgeKey.toUpperCase()}:
 - Fokus treningowy: ${safeGet(distanceKnowledge, 'focus', []).join(', ')}
 - Kluczowe typy treningów: ${safeGet(distanceKnowledge, 'keyTrainingTypes', []).join(', ')}
 - Typowa długość planu: ${safeGet(distanceKnowledge, `typicalPlanLength.${userLevel}`, '8-12 tygodni')}
@@ -469,7 +538,7 @@ ${Object.entries(safeGet(this.knowledgeBase, 'principles', {})).map(([key, value
 - ${safeGet(value, 'description', key)}:
   * ${safeGet(value, 'explanation', 'brak wyjaśnienia')}
   * Zastosowanie: ${safeGet(value, 'application', []).join(', ')}
-`).join('\n')}
+`).join('\\n')}
 
 ### FAZY TRENINGOWE:
 ${Object.entries(safeGet(this.knowledgeBase, 'phases', {})).map(([key, value]) => `
@@ -478,14 +547,14 @@ ${Object.entries(safeGet(this.knowledgeBase, 'phases', {})).map(([key, value]) =
   * Czas trwania: ${safeGet(value, 'duration', 'nie określono')}
   * Komponenty: ${safeGet(value, 'keyComponents', []).join(', ')}
   * Progresja: ${safeGet(value, 'progression', []).join(', ')}
-`).join('\n')}
+`).join('\\n')}
 
 ### ZAPOBIEGANIE KONTUZJOM:
 ${Object.entries(safeGet(this.knowledgeBase, 'injuryPrevention.commonInjuries', {})).map(([key, value]) => `
 - ${key}:
   * Opis: ${safeGet(value, 'description', 'brak opisu')}
   * Zapobieganie: ${safeGet(value, 'prevention', []).join(', ')}
-`).join('\n')}
+`).join('\\n')}
 
 ### ZALECENIA ŻYWIENIOWE:
 - Przed treningiem: ${safeGet(safeGet(this.knowledgeBase, 'nutrition', {}), 'preRun.guidelines', []).join(', ')}
@@ -510,8 +579,8 @@ ${Object.entries(safeGet(data, 'exercises', {})).map(([exercise, details]) => `
   * Progresja: ${safeGet(details, 'progression', []).join(', ')}
   * Intensywność: ${safeGet(details, 'intensity', 'nie określono')}
   * Korzyści: ${safeGet(details, 'benefits', []).join(', ')}
-`).join('\n')}
-`).join('\n')}
+`).join('\\n')}
+`).join('\\n')}
 
 ### ĆWICZENIA KOREKCYJNE (dla biegaczy po kontuzjach lub z ryzykiem urazów):
 ${(() => {
@@ -523,15 +592,15 @@ ${(() => {
 ### CZĘSTOTLIWOŚĆ ĆWICZEŃ (dla poziomu ${userLevel}):
 ${Object.entries(safeGet(this.knowledgeBase, 'exerciseFrequency', {})[userLevel] || {}).map(([type, frequency]) => `
 - ${type}: ${frequency}
-`).join('\n')}
+`).join('\\n')}
 
 ### ZASADY PROGRESJI ĆWICZEŃ:
-${safeGet(this.knowledgeBase, 'exerciseProgression.principles', []).map(principle => `- ${principle}`).join('\n')}
+${safeGet(this.knowledgeBase, 'exerciseProgression.principles', []).map(principle => `- ${principle}`).join('\\n')}
 
 ### CZYNNIKI PROGRESJI:
 ${Object.entries(safeGet(this.knowledgeBase, 'exerciseProgression.progressionFactors', {})).map(([factor, values]) => `
 - ${factor}: ${values.join(', ')}
-`).join('\n')}`;
+`).join('\\n')}`;
 
     return `Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Stwórz spersonalizowany plan treningowy na podstawie poniższych informacji o użytkowniku i dostępnej bazie wiedzy.
 
@@ -542,6 +611,8 @@ ${goalInfo}
 ${daysPerWeekInfo}
 ${weeklyKilometersInfo}
 ${planDurationInfo}
+${planStartDateInfo}
+${raceDateInfo}
 
 ### INFORMACJE O ZDROWIU:
 ${healthInfoText}
@@ -583,6 +654,7 @@ Plan musi być zwrócony w następującym formacie JSON.
       "days": [
         {
           "day_name": string (WAŻNE: użyj DOKŁADNIE jednej z wartości: "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"),
+          "date": string (YYYY-MM-DD, data treningu - WAŻNE: oblicz na podstawie daty startu planu i dnia tygodnia),
           "workout": {
             "type": string,
             "description": string,
@@ -670,6 +742,9 @@ KRYTYCZNE WYMAGANIA:
 15. Dostosuj plan do specyficznych wymagań dystansu docelowego
 16. Sekcja \`corrective_exercises\` w odpowiedzi JSON zostanie wypełniona osobno, jeśli użytkownik zgłosił kontuzję. W głównym planie można zostawić ją jako pustą strukturę lub pominąć, jeśli model ma tendencję do jej wypełniania. Dla pewności, instruuję, aby główny model jej nie wypełniał.
 17. Długość tablicy \`plan_weeks\` (liczba faktycznie wygenerowanych tygodni w planie) MUSI być zgodna z wartością podaną w \`Planowany czas trwania planu: X tygodni\` w sekcji \`DANE UŻYTKOWNIKA\`. Pole \`metadata.duration_weeks\` również musi odzwierciedlać tę liczbę. Nie skracaj planu bez wyraźnego powodu wynikającego z innych ograniczeń.
+18. Jeśli podano 'Data zawodów docelowych', plan MUSI być tak skonstruowany, aby zakończyć się w tygodniu tych zawodów, uwzględniając odpowiedni tapering w ostatnich 1-3 tygodniach, w zależności od długości planu i dystansu. Ostatni tydzień planu powinien być tygodniem startowym.
+19. Jeśli podano 'Preferowana data rozpoczęcia planu', pierwszy tydzień planu powinien być interpretowany jako rozpoczynający się w okolicach tej daty.
+20. Dla każdego dnia treningowego w \`plan_weeks.days\` MUSISZ wygenerować poprawne pole \`date\` w formacie YYYY-MM-DD. Oblicz daty sekwencyjnie, zaczynając od \`effectivePlanStartDate\` (informacja o niej będzie w \`DANE UŻYTKOWNIKA\` jako \`Preferowana data rozpoczęcia planu\` lub domyślnie dzisiejsza data, jeśli nie podano inaczej). Pamiętaj, że \`day_name\` określa dzień tygodnia dla danego treningu.
 
 WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika i wykorzystujący wiedzę z bazy wiedzy. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON. Nie używaj cudzysłowów w nazwach pól.
 Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wzór struktury JSON. NIE KOPIUJ zawartości tego przykładu. Wygeneruj całkowicie nowy, unikalny plan dostosowany do danych użytkownika.`;
@@ -1012,6 +1087,24 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
   _createDefaultTrainingPlan(userData) {
     console.log('Tworzenie domyślnego planu treningowego');
     const currentData = userData || this.userData || {}; 
+
+    const formatDate = (date) => {
+      const year = date.getFullYear();
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    let effectivePlanStartDate = new Date(); // Domyślnie dzisiaj
+    effectivePlanStartDate.setHours(0, 0, 0, 0);
+
+    if (currentData.planStartDate) {
+      const parsedStartDate = new Date(currentData.planStartDate);
+      parsedStartDate.setHours(0,0,0,0);
+      if (!isNaN(parsedStartDate.getTime()) && parsedStartDate >= effectivePlanStartDate) {
+        effectivePlanStartDate = parsedStartDate;
+      }
+    } 
   
     // Użyj nowych pól z schematu lub wartości domyślnych
     const imieNazwisko = currentData.imieNazwisko || 'Użytkownik';
@@ -1084,16 +1177,23 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
       // Posortuj dni treningowe według kolejności w tygodniu
       const sortedTreningoweDni = [...treningoweDni].sort((a, b) => daysOrder[a] - daysOrder[b]);
       
-      const days = sortedTreningoweDni.map(day => {
+      const days = sortedTreningoweDni.map(dayName => {
         let workoutType, description, distance, duration;
         
+        // Obliczanie daty dla danego dnia treningowego
+        // Zakładamy, że tydzień planu (weekNum) zaczyna się od effectivePlanStartDate
+        // i dni są rozłożone w tym tygodniu.
+        const dayOffset = daysOrder[dayName] - daysOrder[sortedTreningoweDni[0]]; // Offset względem pierwszego dnia treningowego w tygodniu
+        const currentWorkoutDate = new Date(effectivePlanStartDate);
+        currentWorkoutDate.setDate(effectivePlanStartDate.getDate() + (weekNum - 1) * 7 + dayOffset);
+
         // Różnicuj treningi w zależności od dnia tygodnia
-        if (day === "poniedziałek" || day === "piątek") {
+        if (dayName === "poniedziałek" || dayName === "piątek") {
           workoutType = "Trening łatwy";
           description = "Bieg w strefie komfortowej, rozwijający bazę tlenową";
           distance = 5 + (weekNum - 1) * 0.5; // Progresja dystansu przez tygodnie
           duration = 30 + (weekNum - 1) * 5; // Progresja czasu przez tygodnie
-        } else if (day === "środa") {
+        } else if (dayName === "środa") {
           workoutType = "Trening tempowy";
           description = "Interwały biegowe ze zmiennym tempem";
           distance = 4 + (weekNum - 1) * 0.3;
@@ -1106,7 +1206,8 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
         }
         
         return {
-          day_name: day,
+          day_name: dayName,
+          date: formatDate(currentWorkoutDate),
           workout: {
             type: workoutType,
             description: description,
@@ -1142,6 +1243,9 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
       });
     }
 
+    // Upewnij się, że treningoweDni jest zdefiniowane również tutaj dla metadanych
+    const finalTreningoweDni = currentData.dniTreningowe || ["poniedziałek", "środa", "sobota"];
+
     return {
       id: `plan_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       metadata: {
@@ -1151,7 +1255,7 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
                      "Biegacze zaawansowani", 
         target_goal: currentData.glownyCel || "poprawa_kondycji", 
         level_hint: poziomZaawansowania, 
-        days_per_week: treningoweDni.length.toString(), 
+        days_per_week: finalTreningoweDni.length.toString(), 
         duration_weeks: planDuration, 
         description: `Plan treningowy dla ${imieNazwisko} (wygenerowany awaryjnie)`,
         author: "RunFitting AI"

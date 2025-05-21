@@ -55,6 +55,10 @@ const trainingPlanSchema = new mongoose.Schema({
         required: [true, 'Nazwa dnia jest wymagana'],
         enum: ['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela']
       },
+      date: {
+        type: String,
+        required: [true, 'Data treningu jest wymagana']
+      },
       workout: {
         type: mongoose.Schema.Types.Mixed,
         required: [true, 'Trening jest wymagany']

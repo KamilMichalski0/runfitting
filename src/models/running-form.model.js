@@ -44,6 +44,8 @@ const trainingFormSubmissionSchema = new Schema({
   // --- SEKCJA 2B: Plan biegowy --- (Fields optional unless glownyCel matches)
   poziomZaawansowania: { type: String, enum: ['poczatkujacy', 'sredniozaawansowany', 'zaawansowany'] },
   dystansDocelowy: { type: String, enum: ['5km', '10km', 'polmaraton', 'maraton', 'inny'] },
+  raceDate: { type: Date }, // Data zawodów (opcjonalna)
+  planStartDate: { type: Date }, // Data rozpoczęcia planu (opcjonalna)
   aktualnyKilometrTygodniowy: { type: Number, min: 0 }, // Zod: optional()
   // dniTreningowe: { type: [String], required: true, minlength: 1 }, // Common field, see below
   testCoopera: { type: String, enum: ['wykonany', 'niewykonany'] },
