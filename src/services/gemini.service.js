@@ -5,9 +5,10 @@ const { OpenAI } = require('openai');
 const AppError = require('../utils/app-error');
 const config = require('../config/gemini.config');
 const { getExamplePlanTemplate } = require('../templates/plan-template-selector');
+const correctiveExercisesKnowledgeBase = require('../knowledge/corrective-knowledge-base'); // Corrected path
 
 class GeminiService {
-  constructor(knowledgeBase) {
+  constructor(knowledgeBase, correctiveExercisesKnowledgeBase) {
     // Load Gemini config
     this.geminiApiKey = geminiConfig.apiKey;
     this.geminiModel = geminiConfig.model;
@@ -48,6 +49,7 @@ class GeminiService {
       throw new Error('Knowledge base dependency is required for GeminiService.');
     }
     this.knowledgeBase = knowledgeBase; 
+    this.correctiveExercisesKnowledgeBase = correctiveExercisesKnowledgeBase;
 
     // Bind methods
     this._createPrompt = this._createPrompt.bind(this);
@@ -55,6 +57,8 @@ class GeminiService {
     this._parseOpenAIResponse = this._parseOpenAIResponse.bind(this); 
     this._createDefaultTrainingPlan = this._createDefaultTrainingPlan.bind(this);
     this._generatePlanWithOpenAI = this._generatePlanWithOpenAI.bind(this); 
+    this._generateCorrectiveExercises = this._generateCorrectiveExercises.bind(this);
+    this._createCorrectiveExercisesPrompt = this._createCorrectiveExercisesPrompt.bind(this);
 
     // Remove decorator calls
     this.generateTrainingPlan = this.generateTrainingPlan.bind(this);
@@ -191,7 +195,50 @@ class GeminiService {
 
     // 3. Fallback to default plan if both APIs fail or are not configured
     this.log('\n--- GENEROWANIE PLANU DOMYŚLNEGO (FALLBACK) ---');
-    return this._createDefaultTrainingPlan(userData);
+    let trainingPlan = this._createDefaultTrainingPlan(userData);
+
+    // Generate and merge corrective exercises if injuries are reported
+    if (userData.kontuzje && this.correctiveExercisesKnowledgeBase) {
+      try {
+        this.log('\n--- GENEROWANIE ĆWICZEŃ KOREKCYJNYCH ---');
+        const correctiveExercisesData = await this._generateCorrectiveExercises(userData, this.correctiveExercisesKnowledgeBase);
+        if (correctiveExercisesData) {
+          trainingPlan.corrective_exercises = correctiveExercisesData;
+          this.log('Pomyślnie zintegrowano ćwiczenia korekcyjne.');
+        } else {
+          this.log('Nie udało się wygenerować ćwiczeń korekcyjnych, używam domyślnych z planu awaryjnego.');
+          // Fallback to default corrective exercises if generation fails but injuries were reported
+          if (!trainingPlan.corrective_exercises || trainingPlan.corrective_exercises.list.length === 0) {
+             trainingPlan.corrective_exercises = {
+                frequency: "Wykonuj 2-3 razy w tygodniu (zalecenia awaryjne)",
+                list: [
+                  { name: "Rolowanie piankowe łydek", sets: 1, reps: null, duration: 60, description: "Rozluźnij mięśnie łydek." },
+                  { name: "Mostki biodrowe", sets: 3, reps: 15, duration: null, description: "Wzmocnij mięśnie stabilizujące miednicę." }
+                ]
+              };
+          }
+        }
+      } catch (corrExError) {
+        this.error('\n⚠️ Błąd podczas generowania ćwiczeń korekcyjnych:', corrExError);
+        // Fallback to default corrective exercises on error
+        if (!trainingPlan.corrective_exercises || trainingPlan.corrective_exercises.list.length === 0) {
+           trainingPlan.corrective_exercises = {
+              frequency: "Wykonuj 2-3 razy w tygodniu (zalecenia awaryjne po błędzie)",
+              list: [
+                { name: "Rolowanie piankowe łydek", sets: 1, reps: null, duration: 60, description: "Rozluźnij mięśnie łydek." },
+                { name: "Mostki biodrowe", sets: 3, reps: 15, duration: null, description: "Wzmocnij mięśnie stabilizujące miednicę." }
+              ]
+            };
+        }
+      }
+    } else if (!userData.kontuzje) {
+      trainingPlan.corrective_exercises = {
+        frequency: "Nie dotyczy - brak zgłoszonych kontuzji",
+        list: []
+      };
+    }
+    
+    return trainingPlan;
   }
 
   _createPrompt(userData) {
@@ -468,30 +515,9 @@ ${Object.entries(safeGet(data, 'exercises', {})).map(([exercise, details]) => `
 
 ### ĆWICZENIA KOREKCYJNE (dla biegaczy po kontuzjach lub z ryzykiem urazów):
 ${(() => {
-  const corrective = safeGet(this.knowledgeBase, 'complementaryExercises.correctiveExercises', null);
-  if (!corrective) return 'Brak danych o ćwiczeniach korekcyjnych.';
-  let out = `${corrective.description}\n`;
-  // Kategorie
-  if (corrective.categories) {
-    out += Object.entries(corrective.categories).map(([cat, catData]) => `\n#### ${cat} (${catData.description}):\n` +
-      Object.entries(catData.exercises || {}).map(([ex, exData]) => `- ${ex}: ${exData.description} (Technika: ${exData.technique}; Warianty: ${(exData.variations||[]).join(', ')}; Mięśnie: ${(exData.targetMuscles||[]).join(', ')}; Progresja: ${(exData.progression||[]).join(', ')}; Intensywność: ${exData.intensity}; Korzyści: ${(exData.benefits||[]).join(', ')})`).join('\n')
-    ).join('\n');
-  }
-  // Rekomendacje
-  if (corrective.recommendations) {
-    out += '\nRekomendacje wg poziomu:\n';
-    Object.entries(corrective.recommendations).forEach(([level, rec]) => {
-      out += `- ${level}: częstotliwość: ${rec.frequency}, fokus: ${(rec.focus||[]).join(', ')}, progresja: ${rec.progression}\n`;
-    });
-  }
-  // Specyficzne dla urazów
-  if (corrective.injurySpecific) {
-    out += '\nZalecenia dla typowych urazów:\n';
-    Object.entries(corrective.injurySpecific).forEach(([inj, injData]) => {
-      out += `- ${inj}: fokus: ${(injData.focus||[]).join(', ')}, ćwiczenia: ${(injData.exercises||[]).join(', ')}\n`;
-    });
-  }
-  return out;
+  // This section will now be handled by a separate call, so we can simplify or remove it from the main prompt's knowledge base dump.
+  // For now, let's indicate it's handled separately.
+  return 'Sekcja ćwiczeń korekcyjnych zostanie wygenerowana osobno, jeśli użytkownik zgłosił kontuzje.';
 })()}
 
 ### CZĘSTOTLIWOŚĆ ĆWICZEŃ (dla poziomu ${userLevel}):
@@ -642,7 +668,7 @@ KRYTYCZNE WYMAGANIA:
 13. Wykorzystaj wiedzę z bazy wiedzy do stworzenia optymalnego planu treningowego
 14. Uwzględnij fazy treningowe i zasady progresji z bazy wiedzy
 15. Dostosuj plan do specyficznych wymagań dystansu docelowego
-16. Sekcja \`corrective_exercises\` w odpowiedzi JSON powinna być generowana z odpowiednimi ćwiczeniami TYLKO WTEDY, gdy użytkownik zgłosił kontuzję (patrz sekcja \`INFORMACJE O ZDROWIU\`). Jeśli użytkownik NIE zgłosił kontuzji, pole \`corrective_exercises\` powinno zawierać informację o braku potrzeby ich stosowania (np. pole \`frequency\` ustawione na "Nie dotyczy - brak zgłoszonych kontuzji" i pusta tablica \`list\`). W przypadku zgłoszonej kontuzji, dobierz ćwiczenia z sekcji \`### ĆWICZENIA KOREKCYJNE\` z bazy wiedzy, adekwatne do opisanego problemu.
+16. Sekcja \`corrective_exercises\` w odpowiedzi JSON zostanie wypełniona osobno, jeśli użytkownik zgłosił kontuzję. W głównym planie można zostawić ją jako pustą strukturę lub pominąć, jeśli model ma tendencję do jej wypełniania. Dla pewności, instruuję, aby główny model jej nie wypełniał.
 17. Długość tablicy \`plan_weeks\` (liczba faktycznie wygenerowanych tygodni w planie) MUSI być zgodna z wartością podaną w \`Planowany czas trwania planu: X tygodni\` w sekcji \`DANE UŻYTKOWNIKA\`. Pole \`metadata.duration_weeks\` również musi odzwierciedlać tę liczbę. Nie skracaj planu bez wyraźnego powodu wynikającego z innych ograniczeń.
 
 WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika i wykorzystujący wiedzę z bazy wiedzy. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON. Nie używaj cudzysłowów w nazwach pól.
@@ -1132,11 +1158,8 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
       },
       plan_weeks: planWeeks,
       corrective_exercises: {
-        frequency: "Wykonuj 2-3 razy w tygodniu",
-        list: [
-          { name: "Rolowanie piankowe łydek", sets: 1, duration: 60, description: "Rozluźnij mięśnie łydek." },
-          { name: "Ćwiczenia wzmacniające mięśnie pośladkowe (mostki biodrowe)", sets: 3, reps: 15, description: "Wzmocnij mięśnie stabilizujące miednicę." }
-        ]
+        frequency: "Nie dotyczy - brak zgłoszonych kontuzji",
+        list: []
       },
       pain_monitoring: {
         scale: "0-10",
@@ -1152,6 +1175,158 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
         "W przypadku kontuzji lub bólu skonsultuj się z lekarzem"
       ]
     };
+  }
+
+  // Placeholder for the new method to generate corrective exercises
+  async _generateCorrectiveExercises(userData, correctiveKnowledge) {
+    this.log('Rozpoczęcie generowania ćwiczeń korekcyjnych...');
+    // TODO: Implement logic to create a dedicated prompt and call Gemini API
+    // For now, return null to allow testing the main flow
+    
+    const prompt = this._createCorrectiveExercisesPrompt(userData, correctiveKnowledge);
+    if (!prompt) {
+        this.error('Nie udało się stworzyć promptu dla ćwiczeń korekcyjnych.');
+        return null;
+    }
+
+    if (this.geminiApiKey) {
+      try {
+        this.log('Wysyłanie żądania o ćwiczenia korekcyjne do Gemini API...');
+        const requestUrl = `${this.geminiApiUrl}/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`;
+        const requestBody = {
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { ...this.geminiGenerationConfig, responseMimeType: 'application/json' }, // Ensure JSON response
+           safetySettings: [ // Standard safety settings
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          ],
+        };
+
+        const response = await this.axiosClient.post(requestUrl, requestBody, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        this.log('Otrzymano odpowiedź z Gemini API dla ćwiczeń korekcyjnych.');
+        // Need a dedicated parser or adapt _parseResponse
+        // For now, let's try to parse it simply, expecting the structure { frequency: string, list: [] }
+         if (response.data && response.data.candidates && response.data.candidates[0] && response.data.candidates[0].content && response.data.candidates[0].content.parts && response.data.candidates[0].content.parts[0] && response.data.candidates[0].content.parts[0].text) {
+          const rawJson = response.data.candidates[0].content.parts[0].text;
+          try {
+            const correctiveExercises = JSON.parse(rawJson);
+            // Basic validation
+            if (correctiveExercises && typeof correctiveExercises.frequency === 'string' && Array.isArray(correctiveExercises.list)) {
+              this.log('Pomyślnie sparsowano ćwiczenia korekcyjne.');
+              return correctiveExercises;
+            } else {
+               this.error('Sparsowane ćwiczenia korekcyjne mają nieprawidłową strukturę:', correctiveExercises);
+            }
+          } catch (parseError) {
+            this.error('Błąd parsowania JSON z odpowiedzi Gemini dla ćwiczeń korekcyjnych:', parseError, 'Raw JSON:', rawJson);
+          }
+        } else {
+          this.error('Nieprawidłowa struktura odpowiedzi Gemini dla ćwiczeń korekcyjnych:', response.data);
+        }
+      } catch (error) {
+        this.error('Błąd API Gemini podczas generowania ćwiczeń korekcyjnych:', {
+          message: error.message,
+          status: error.response?.status,
+          data: error.response?.data,
+        });
+      }
+    } else {
+        this.log('Klucz API Gemini nie jest ustawiony, pomijanie generowania ćwiczeń korekcyjnych przez Gemini.');
+    }
+    
+    this.log('Nie udało się wygenerować ćwiczeń korekcyjnych przez API.');
+    return null; // Fallback if API call fails
+  }
+
+  // Placeholder for the new method to create the prompt for corrective exercises
+  _createCorrectiveExercisesPrompt(userData, correctiveKnowledge) {
+    this.log('Tworzenie promptu dla ćwiczeń korekcyjnych...');
+    if (!userData.kontuzje) {
+      return null; // No need for a prompt if no injuries
+    }
+
+    let injuryDetails = `Użytkownik zgłosił następujące problemy:\n`;
+    if (userData.opisKontuzji) injuryDetails += `- Opis kontuzji: ${userData.opisKontuzji}\n`;
+    if (userData.lokalizacjaBolu) injuryDetails += `- Lokalizacja bólu: ${userData.lokalizacjaBolu}\n`;
+    if (userData.charakterBolu) injuryDetails += `- Charakter bólu: ${userData.charakterBolu}\n`;
+    if (userData.skalaBolu) injuryDetails += `- Skala bólu (0-10): ${userData.skalaBolu}\n`;
+    
+    if (injuryDetails === `Użytkownik zgłosił następujące problemy:\n` && userData.kontuzje === true) {
+        injuryDetails = 'Użytkownik zgłosił kontuzję, ale nie podał szczegółów. Zaproponuj ogólne ćwiczenia korekcyjne dla biegaczy.';
+    }
+
+    // Prepare a string representation of the corrective knowledge base for the prompt
+    // This is a simplified example; you might want to be more selective or format it differently
+    let knowledgeString = "### Wybrana Baza Wiedzy o Ćwiczeniach Korekcyjnych:\n\n";
+    if (correctiveKnowledge && correctiveKnowledge.exerciseSections) {
+        knowledgeString += "Podstawowe sekcje ćwiczeń:\n";
+        for (const sectionKey in correctiveKnowledge.exerciseSections) {
+            const section = correctiveKnowledge.exerciseSections[sectionKey];
+            knowledgeString += ` - ${section.title}: ${section.description}\n`;
+            if (section.areas) {
+                 for (const areaKey in section.areas) {
+                    const area = section.areas[areaKey];
+                    knowledgeString += `    - ${area.title}\n`;
+                    area.exercises.forEach(ex => {
+                        knowledgeString += `        - ${ex.name}: ${ex.instructions.substring(0,100)}... (Serie/powtórzenia: ${ex.sets_reps || ex.sets_duration || 'N/A'})\n`;
+                    });
+                }
+            } else if (section.exercises) {
+                 section.exercises.forEach(ex => {
+                    knowledgeString += `    - ${ex.name}: ${ex.instructions.substring(0,100)}... (Serie/powtórzenia: ${ex.sets_reps || ex.sets_duration || 'N/A'})\n`;
+                });
+            }
+        }
+        knowledgeString += "\n";
+    }
+    if (correctiveKnowledge && correctiveKnowledge.implementationPrinciples) {
+        knowledgeString += "Zasady wdrażania i adaptacji:\n";
+        knowledgeString += `- Dla początkujących: ${correctiveKnowledge.implementationPrinciples.bySkillLevel.beginner.substring(0,150)}...\n`;
+        knowledgeString += `- W przypadku bólu: ${correctiveKnowledge.adaptationAndModification.painOrRecurrence.action.substring(0,150)}...\n`;
+    }
+
+    const prompt = `
+Jesteś ekspertem fizjoterapii sportowej specjalizującym się w kontuzjach biegaczy. Twoim zadaniem jest wygenerowanie zestawu ćwiczeń korekcyjnych.
+
+### INFORMACJE O KONTUZJI UŻYTKOWNIKA:
+${injuryDetails}
+
+### BAZA WIEDZY O ĆWICZENIACH KOREKCYJNYCH DLA BIEGACZY (fragmenty):
+${knowledgeString} 
+// Powyższa baza wiedzy to skrót. Model powinien polegać na swojej ogólnej wiedzy uzupełnionej tymi wskazówkami.
+
+### WYMAGANA STRUKTURA ODPOWIEDZI (JSON):
+Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON musi mieć następującą strukturę:
+{
+  "frequency": "string (np. '2-3 razy w tygodniu w dni nietreningowe', 'Codziennie po 15 minut')",
+  "list": [
+    {
+      "name": "string (nazwa ćwiczenia)",
+      "sets": number (liczba serii),
+      "reps": number lub null (liczba powtórzeń, jeśli dotyczy),
+      "duration": number lub null (czas trwania w sekundach, jeśli dotyczy),
+      "description": "string (krótki opis/instrukcja wykonania, max 2-3 zdania)"
+    }
+    // ... więcej ćwiczeń ...
+  ]
+}
+
+### INSTRUKCJE:
+1.  Przeanalizuj dostarczoną bazę wiedzy oraz informacje o kontuzji użytkownika.
+2.  Zaproponuj 3-5 kluczowych ćwiczeń korekcyjnych adekwatnych do opisanych problemów lub, jeśli brak szczegółów, ogólnie korzystnych dla biegaczy z typowymi dolegliwościami.
+3.  Każde ćwiczenie powinno zawierać nazwę, liczbę serii, powtórzeń (lub czas trwania) oraz krótki, zrozumiały opis wykonania.
+4.  Określ zalecaną częstotliwość wykonywania tych ćwiczeń.
+5.  Skup się na ćwiczeniach z bazy wiedzy, które są opisane jako odpowiednie dla problemów użytkownika lub ogólnie dla biegaczy.
+6.  Jeśli w bazie wiedzy są informacje o przeciwwskazaniach, uwzględnij je przy doborze ćwiczeń, starając się ich unikać, jeśli dotyczą zgłoszonego problemu.
+7.  Pamiętaj, aby opis był zwięzły i praktyczny.
+8.  Generuj tylko i wyłącznie obiekt JSON zgodny z podanym schematem.
+`;
+    return prompt;
   }
 }
 
