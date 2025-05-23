@@ -281,13 +281,13 @@ class GeminiService {
 
     // Mapowanie celu użytkownika na rodzaj wiedzy
     const goalToKnowledgeMap = {
-      'redukcja_masy_ciala': 'general_fitness',
+      'redukcja_masy_ciala': 'weight_loss_running', // Dedykowana baza dla redukcji wagi
       'przebiegniecie_dystansu': this._mapDistanceToKnowledgeBase(userData.dystansDocelowy || '5km'),
-      'zaczac_biegac': 'general_fitness',
-      'aktywny_tryb_zycia': 'general_fitness',
-      'zmiana_nawykow': 'general_fitness',
-      'powrot_po_kontuzji': 'general_fitness',
-      'poprawa_kondycji': 'general_fitness',
+      'zaczac_biegac': 'beginner_specialized', // Specjalna baza dla początkujących
+      'aktywny_tryb_zycia': 'lifestyle_fitness', // Dedykowana dla stylu życia
+      'zmiana_nawykow': 'habit_building', // Dedykowana dla budowania nawyków
+      'powrot_po_kontuzji': 'injury_recovery', // Dedykowana dla powrotu po kontuzji
+      'poprawa_kondycji': 'fitness_improvement', // Dedykowana dla poprawy kondycji
       'inny_cel': 'general_fitness'
     };
 
@@ -748,7 +748,41 @@ KRYTYCZNE WYMAGANIA:
 21. Plan musi być zróżnicowany, zawierać różne typy treningów i ćwiczeń, aby zachęcić użytkownika do regularnego treningu.
 
 WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika i wykorzystujący wiedzę z bazy wiedzy. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON. Nie używaj cudzysłowów w nazwach pól.
-Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wzór struktury JSON. NIE KOPIUJ zawartości tego przykładu. Wygeneruj całkowicie nowy, unikalny plan dostosowany do danych użytkownika.`;
+Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wzór struktury JSON. NIE KOPIUJ zawartości tego przykładu. Wygeneruj całkowicie nowy, unikalny plan dostosowany do danych użytkownika.
+
+### KLUCZOWE WYMAGANIA RÓŻNORODNOŚCI:
+21. Plan MUSI być maksymalnie zróżnicowany i zawierać różne typy treningów i ćwiczeń, aby zachęcić użytkownika do regularnego treningu i uniknąć monotonii.
+
+22. **SPECJALNE ZASADY DLA POCZĄTKUJĄCYCH (poziom: poczatkujacy, absolute_beginner):**
+    - Wprowadzaj STOPNIOWO różne typy aktywności: spacery, marsz-bieg, aktywna regeneracja, mobilność
+    - W pierwszych tygodniach używaj RÓŻNYCH formatów treningu każdego dnia
+    - Przykłady typów treningów dla początkujących: 'walk_run', 'mobility_walk', 'active_recovery', 'endurance_building', 'walk_run_intervals', 'technique_focus'
+    - Każdy trening powinien mieć INNY charakter i INNE ćwiczenia uzupełniające
+    - Dodawaj elementy zabawy i variacji (np. "weekend challenge", "fitness spacer", "trening techniki")
+
+23. **RÓŻNORODNOŚĆ OPISÓW I INSTRUKCJI:**
+    - Każdy trening musi mieć UNIKALNY i SZCZEGÓŁOWY opis (minimum 10-15 słów)
+    - Unikaj powtarzania tych samych fraz - każdy opis powinien być świeży i motywujący
+    - Używaj różnorodnych terminów: "intervals", "fartlek", "tempo run", "recovery jog", "long slow distance"
+    - Dla początkujących używaj opisów typu: "eksploracja różnych temp", "nauka rytmu", "budowanie pewności"
+
+24. **RÓŻNORODNOŚĆ ĆWICZEŃ UZUPEŁNIAJĄCYCH:**
+    - Każdy dzień treningowy powinien mieć RÓŻNE ćwiczenia support_exercises
+    - Rotuj między: rozciąganiem, wzmacnianiem, mobilnością, równowagą, techniką
+    - Używaj konkretnych nazw: "Wzmacnianie core", "Mobilność bioder", "Dynamiczne rozciąganie", "Ćwiczenia równowagi", "Aktywacja pośladków"
+    - Dla początkujących wprowadzaj ćwiczenia progresywnie od najprostszych
+
+25. **PROGRESYWNE WPROWADZANIE ELEMENTÓW:**
+    - Tydzień 1-2: podstawy (marsz-bieg, spacery z ćwiczeniami)
+    - Tydzień 3-4: wprowadzanie variacji tempa i różnych formatów
+    - Tydzień 5+: większa różnorodność i złożoność treningu
+    - Każdy tydzień powinien mieć INNY focus i INNE podejście do treningu
+
+26. **KREATYWNOŚĆ W NAZWACH I PODEJŚCIU:**
+    - Używaj motywujących nazw treningów jak "Morning energizer", "Weekend warrior", "Midweek challenge"
+    - Variuj miejsca i scenariusze: park, ścieżki, boisko, okolice domu
+    - Dodawaj elementy mentalne: "focus na oddychaniu", "świadomość techniki", "listening to your body"
+`;
   }
 
   // Nowa metoda mapująca dystans na odpowiedni klucz w bazie wiedzy
@@ -1178,33 +1212,81 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
       // Posortuj dni treningowe według kolejności w tygodniu
       const sortedTreningoweDni = [...treningoweDni].sort((a, b) => daysOrder[a] - daysOrder[b]);
       
-      const days = sortedTreningoweDni.map(dayName => {
+      const days = sortedTreningoweDni.map((dayName, dayIndex) => {
         let workoutType, description, distance, duration;
         
         // Obliczanie daty dla danego dnia treningowego
-        // Zakładamy, że tydzień planu (weekNum) zaczyna się od effectivePlanStartDate
-        // i dni są rozłożone w tym tygodniu.
-        const dayOffset = daysOrder[dayName] - daysOrder[sortedTreningoweDni[0]]; // Offset względem pierwszego dnia treningowego w tygodniu
+        const dayOffset = daysOrder[dayName] - daysOrder[sortedTreningoweDni[0]];
         const currentWorkoutDate = new Date(effectivePlanStartDate);
         currentWorkoutDate.setDate(effectivePlanStartDate.getDate() + (weekNum - 1) * 7 + dayOffset);
 
-        // Różnicuj treningi w zależności od dnia tygodnia
-        if (dayName === "poniedziałek" || dayName === "piątek") {
-          workoutType = "Trening łatwy";
-          description = "Bieg w strefie komfortowej, rozwijający bazę tlenową";
-          distance = 5 + (weekNum - 1) * 0.5; // Progresja dystansu przez tygodnie
-          duration = 30 + (weekNum - 1) * 5; // Progresja czasu przez tygodnie
-        } else if (dayName === "środa") {
-          workoutType = "Trening tempowy";
-          description = "Interwały biegowe ze zmiennym tempem";
-          distance = 4 + (weekNum - 1) * 0.3;
-          duration = 40 + (weekNum - 1) * 5;
+        // ULEPSZONA LOGIKA RÓŻNORODNOŚCI - szczególnie dla początkujących
+        if (poziomZaawansowania === 'poczatkujacy' || poziomZaawansowania === 'absolute_beginner') {
+          // Dla początkujących - znacznie więcej variacji
+          const beginnerWorkoutTypes = [
+            { type: "walk_run", description: "Wprowadzenie marsz-bieg z progresywnym wydłużaniem interwałów biegowych" },
+            { type: "mobility_walk", description: "Aktywny spacer z ćwiczeniami mobilności i rozciąganiem" },
+            { type: "active_recovery", description: "Delikatna aktywność regeneracyjna z elementami fitness" },
+            { type: "endurance_building", description: "Budowanie wytrzymałości poprzez wydłużanie czasu aktywności" },
+            { type: "technique_focus", description: "Koncentracja na technice i świadomości ruchu" },
+            { type: "interval_intro", description: "Łagodne wprowadzenie do treningów interwałowych" }
+          ];
+          
+          // Wybierz typ na podstawie dnia i tygodnia dla variacji
+          const typeIndex = (dayIndex + weekNum - 1) % beginnerWorkoutTypes.length;
+          const selectedWorkout = beginnerWorkoutTypes[typeIndex];
+          
+          workoutType = selectedWorkout.type;
+          description = selectedWorkout.description;
+          distance = weekNum <= 2 ? null : 1 + (weekNum - 1) * 0.5; // Początkowe tygodnie bez dystansu
+          duration = 15 + weekNum * 2 + dayIndex * 3; // Progresywny wzrost czasu
+          
         } else {
-          workoutType = "Długi bieg";
-          description = "Długi powolny bieg budujący wytrzymałość";
-          distance = 8 + (weekNum - 1) * 1;
-          duration = 60 + (weekNum - 1) * 10;
+          // Dla średniozaawansowanych i zaawansowanych - rozszerzona logika
+          const advancedWorkoutMap = {
+            "poniedziałek": ["easy_run", "recovery_jog", "base_building"],
+            "wtorek": ["tempo_run", "threshold_training", "fartlek"],
+            "środa": ["interval_training", "speed_work", "hill_repeats"],
+            "czwartek": ["easy_run", "recovery_run", "technique_run"],
+            "piątek": ["tempo_run", "progression_run", "negative_split"],
+            "sobota": ["long_run", "endurance_run", "aerobic_base"],
+            "niedziela": ["long_run", "adventure_run", "exploration_run"]
+          };
+          
+          const dayWorkouts = advancedWorkoutMap[dayName] || ["easy_run"];
+          const workoutIndex = weekNum % dayWorkouts.length;
+          workoutType = dayWorkouts[workoutIndex];
+          
+          // Bardziej zróżnicowane opisy
+          const descriptions = {
+            "easy_run": "Komfortowy bieg w strefie tlenowej budujący bazę wytrzymałościową",
+            "tempo_run": "Trening tempowy rozwijający próg mleczanowy",
+            "interval_training": "Intensywne interwały zwiększające VO2max",
+            "long_run": "Długi bieg budujący wytrzymałość specjalną",
+            "recovery_jog": "Regeneracyjny trucht wspomagający odnowę",
+            "fartlek": "Szwedzki fartlek z naturalnymi zmianami tempa"
+          };
+          
+          description = descriptions[workoutType] || "Zindywidualizowany trening biegowy";
+          distance = 5 + (weekNum - 1) * 0.7 + (dayIndex * 1.5);
+          duration = 35 + (weekNum - 1) * 7 + (dayIndex * 8);
         }
+        
+        // Zróżnicowane ćwiczenia uzupełniające
+        const supportExercisePool = [
+          { name: "Dynamiczne rozciąganie nóg", sets: 1, reps: null, duration: 8 },
+          { name: "Wzmacnianie core i stabilizacji", sets: 2, reps: 12, duration: null },
+          { name: "Mobilność stawów biodrowych", sets: 1, reps: 8, duration: null },
+          { name: "Aktywacja pośladków", sets: 2, reps: 10, duration: null },
+          { name: "Rozciąganie statyczne", sets: 1, reps: null, duration: 10 },
+          { name: "Ćwiczenia równowagi", sets: 2, reps: 6, duration: null },
+          { name: "Roller foam - regeneracja", sets: 1, reps: null, duration: 5 },
+          { name: "Wzmacnianie łydek", sets: 2, reps: 15, duration: null }
+        ];
+        
+        // Wybierz 2 różne ćwiczenia dla każdego dnia
+        const exercise1Index = (dayIndex + weekNum) % supportExercisePool.length;
+        const exercise2Index = (dayIndex + weekNum + 3) % supportExercisePool.length;
         
         return {
           day_name: dayName,
@@ -1212,26 +1294,16 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
           workout: {
             type: workoutType,
             description: description,
-            distance: parseFloat(distance.toFixed(1)),
+            distance: distance ? parseFloat(distance.toFixed(1)) : null,
             duration: duration,
             target_heart_rate: {
-              min: 120,
-              max: 150,
-              zone: "Strefa 2 (Łatwe tempo)"
+              min: 120 + dayIndex * 5,
+              max: 150 + dayIndex * 8,
+              zone: `Strefa ${Math.min(2 + Math.floor(dayIndex/2), 4)} (${dayIndex % 2 === 0 ? 'Łatwe tempo' : 'Umiarkowane tempo'})`
             },
             support_exercises: [
-              {
-                name: "Rozciąganie mięśni nóg",
-                sets: 2,
-                reps: null,
-                duration: 30
-              },
-              {
-                name: "Wzmacnianie core",
-                sets: 2,
-                reps: 10,
-                duration: null
-              }
+              supportExercisePool[exercise1Index],
+              supportExercisePool[exercise2Index]
             ]
           }
         };

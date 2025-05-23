@@ -69,7 +69,10 @@ function selectPlanTemplate(userData) {
       if (daysPerWeek >= 4) {
         plan = planTemplates['start_running_4days'];
       } else if (daysPerWeek >= 3) {
-        plan = planTemplates['start_running_3days'];
+        // Wybierz między standardowym a zróżnicowanym planem
+        // Preferuj zróżnicowany dla większej motywacji
+        const useVariedPlan = Math.random() > 0.3; // 70% szans na zróżnicowany plan
+        plan = useVariedPlan ? planTemplates['start_running_varied_3days'] : planTemplates['start_running_3days'];
       } else {
         plan = planTemplates['start_running_2days'];
       }
@@ -78,9 +81,16 @@ function selectPlanTemplate(userData) {
     }
   }
   
-  // Początkujący
+  // Początkujący - również z możliwością wyboru zróżnicowanego planu
   if (experienceLevel === 'beginner') {
     console.log('Użytkownik jest początkującym');
+    if (mainGoal === 'start_running' && daysPerWeek === 3) {
+      // Dla początkujących wybierających "start_running" oferuj zróżnicowany plan
+      const useVariedPlan = Math.random() > 0.4; // 60% szans na zróżnicowany plan
+      const plan = useVariedPlan ? planTemplates['start_running_varied_3days'] : planTemplates['start_running_3days'];
+      console.log('Wybrany plan startowy dla początkującego:', plan.metadata.description);
+      return plan;
+    }
     if (mainGoal === 'run_5k') {
       const plan = daysPerWeek >= 4 ? planTemplates['5km_beginner_4days'] : planTemplates['5km_beginner_3days'];
       console.log('Wybrany plan 5km:', plan.metadata.description);
@@ -195,7 +205,8 @@ function getExamplePlanTemplate(userData) {
     let plan;
     switch (userData.mainGoal) {
       case 'start_running':
-        plan = planTemplates['start_running_3days'];
+        // Preferuj zróżnicowany plan dla lepszego przykładu
+        plan = planTemplates['start_running_varied_3days'] || planTemplates['start_running_3days'];
         console.log('Wybrano plan startowy:', plan.metadata.description);
         return plan;
       case 'run_5k':
@@ -217,7 +228,15 @@ function getExamplePlanTemplate(userData) {
     }
   }
 
-  // Jeśli nie ma celu lub nie znaleziono dopasowania, zwróć domyślny szablon
+  // Jeśli nie ma celu lub nie znaleziono dopasowania, sprawdź poziom dla lepszego defaultu
+  if (userData.experienceLevel === 'absolute_beginner' || userData.experienceLevel === 'beginner') {
+    console.log('\nUżycie zróżnicowanego planu dla początkującego jako domyślny');
+    const defaultBeginnerPlan = planTemplates['start_running_varied_3days'] || planTemplates['start_running_3days'];
+    console.log('Wybrano domyślny plan początkującego:', defaultBeginnerPlan.metadata.description);
+    return defaultBeginnerPlan;
+  }
+
+  // Jeśli nic nie pasuje, zwróć standardowy domyślny szablon
   console.log('\nNie znaleziono dopasowania, używam domyślnego planu 10km');
   const defaultPlan = planTemplates['10km_intermediate_4days'];
   console.log('Wybrano domyślny plan:', defaultPlan.metadata.description);

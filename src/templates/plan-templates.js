@@ -1683,7 +1683,7 @@ module.exports = {
               ],
               target_heart_rate: { min: 100, max: 130 },
               support_exercises: [
-                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Rozciąganie całego ciała", sets: 1, duration: 10 },
                 { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
               ]
             }
@@ -1705,6 +1705,147 @@ module.exports = {
               support_exercises: [
                 { name: "Rozciąganie całego ciała", sets: 1, duration: 10 },
                 { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+
+  'start_running_varied_3days': {
+    id: 'start_running_varied_3days',
+    metadata: {
+      discipline: "running",
+      target_group: "Osoby rozpoczynające przygodę z bieganiem - plan zróżnicowany",
+      target_goal: "start_running",
+      level_hint: "absolute_beginner",
+      days_per_week: 3,
+      duration_weeks: 8,
+      base_distance_km: 0,
+      description: "Zróżnicowany plan dla początkujących z progresywnym wprowadzaniem różnych typów treningów",
+      author: "RunFitting AI"
+    },
+    plan_weeks: [
+      {
+        week_num: 1,
+        focus: "Wprowadzenie do regularnej aktywności, nauka podstaw",
+        days: [
+          { 
+            day_name: "Wtorek", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Łagodne wprowadzenie: marsz 5 min, bieg 1 min, marsz 5 min, bieg 1 min, marsz 5 min', 
+              duration: 17,
+              intervals: [
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 5 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie dynamiczne", sets: 1, duration: 5 },
+                { name: "Ćwiczenia oddechowe", sets: 1, duration: 3 }
+              ]
+            }
+          },
+          { 
+            day_name: "Czwartek", 
+            workout: { 
+              type: 'mobility_walk', 
+              description: 'Spacer z ćwiczeniami mobilności - co 2 minuty zatrzymaj się na proste ćwiczenia', 
+              duration: 20,
+              target_heart_rate: { min: 90, max: 120 },
+              support_exercises: [
+                { name: "Koła ramionami podczas spaceru", sets: 5, reps: 10, duration: null },
+                { name: "Wysokie kolana w miejscu", sets: 3, reps: 10, duration: null },
+                { name: "Rozciąganie łydek", sets: 2, reps: null, duration: 15 }
+              ]
+            }
+          },
+          { 
+            day_name: "Sobota", 
+            workout: { 
+              type: 'walk_run', 
+              description: 'Weekend challenge: marsz 4 min, bieg 1 min - powtórz 3 razy', 
+              duration: 15,
+              intervals: [
+                { type: 'walk', duration: 4 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 4 },
+                { type: 'run', duration: 1 },
+                { type: 'walk', duration: 4 },
+                { type: 'run', duration: 1 }
+              ],
+              target_heart_rate: { min: 100, max: 130 },
+              support_exercises: [
+                { name: "Rozciąganie całego ciała", sets: 1, duration: 10 },
+                { name: "Ćwiczenia równowagi", sets: 2, reps: 5, duration: null }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        week_num: 2,
+        focus: "Wprowadzenie variacji i wydłużanie czasu aktywności",
+        days: [
+          { 
+            day_name: "Wtorek", 
+            workout: { 
+              type: 'walk_run_intervals', 
+              description: 'Progresja: marsz 4 min, bieg 2 min, powtórz 3 razy', 
+              duration: 18,
+              intervals: [
+                { type: 'walk', duration: 4 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 4 },
+                { type: 'run', duration: 2 },
+                { type: 'walk', duration: 4 },
+                { type: 'run', duration: 2 }
+              ],
+              target_heart_rate: { min: 100, max: 140 },
+              support_exercises: [
+                { name: "Rozgrzewka dynamiczna", sets: 1, duration: 5 },
+                { name: "Mini przysiady", sets: 2, reps: 8, duration: null }
+              ]
+            }
+          },
+          { 
+            day_name: "Czwartek", 
+            workout: { 
+              type: 'active_recovery', 
+              description: 'Aktywna regeneracja: spacer z elementami fitness', 
+              duration: 25,
+              target_heart_rate: { min: 90, max: 120 },
+              support_exercises: [
+                { name: "Spacer z przysiadami co 3 minuty", sets: 4, reps: 5, duration: null },
+                { name: "Skłony i skręty podczas spaceru", sets: 1, duration: 5 },
+                { name: "Rozciąganie kończące", sets: 1, duration: 8 }
+              ]
+            }
+          },
+          { 
+            day_name: "Sobota", 
+            workout: { 
+              type: 'endurance_building', 
+              description: 'Budowanie wytrzymałości: dłuższe interwały biegu', 
+              duration: 20,
+              intervals: [
+                { type: 'walk', duration: 3 },
+                { type: 'run', duration: 3 },
+                { type: 'walk', duration: 3 },
+                { type: 'run', duration: 3 },
+                { type: 'walk', duration: 3 },
+                { type: 'run', duration: 3 },
+                { type: 'walk', duration: 2 }
+              ],
+              target_heart_rate: { min: 110, max: 140 },
+              support_exercises: [
+                { name: "Wzmacnianie core", sets: 2, reps: 8, duration: null },
+                { name: "Rozciąganie nóg", sets: 1, duration: 10 }
               ]
             }
           }
