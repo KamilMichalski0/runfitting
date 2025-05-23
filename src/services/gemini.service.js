@@ -745,6 +745,7 @@ KRYTYCZNE WYMAGANIA:
 18. Jeśli podano 'Data zawodów docelowych', plan MUSI być tak skonstruowany, aby zakończyć się w tygodniu tych zawodów, uwzględniając odpowiedni tapering w ostatnich 1-3 tygodniach, w zależności od długości planu i dystansu. Ostatni tydzień planu powinien być tygodniem startowym.
 19. Jeśli podano 'Preferowana data rozpoczęcia planu', pierwszy tydzień planu powinien być interpretowany jako rozpoczynający się w okolicach tej daty.
 20. Dla każdego dnia treningowego w \`plan_weeks.days\` MUSISZ wygenerować poprawne pole \`date\` w formacie YYYY-MM-DD. Oblicz daty sekwencyjnie, zaczynając od \`effectivePlanStartDate\` (informacja o niej będzie w \`DANE UŻYTKOWNIKA\` jako \`Preferowana data rozpoczęcia planu\` lub domyślnie dzisiejsza data, jeśli nie podano inaczej). Pamiętaj, że \`day_name\` określa dzień tygodnia dla danego treningu.
+21. Plan musi być zróżnicowany, zawierać różne typy treningów i ćwiczeń, aby zachęcić użytkownika do regularnego treningu.
 
 WAŻNE: Wygeneruj nowy, unikalny plan treningowy bazując na powyższym przykładzie, ale dostosowany do profilu użytkownika i wykorzystujący wiedzę z bazy wiedzy. Odpowiedz WYŁĄCZNIE w formacie JSON. Nie dodawaj żadnego tekstu przed ani po strukturze JSON. Nie używaj cudzysłowów w nazwach pól.
 Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wzór struktury JSON. NIE KOPIUJ zawartości tego przykładu. Wygeneruj całkowicie nowy, unikalny plan dostosowany do danych użytkownika.`;
