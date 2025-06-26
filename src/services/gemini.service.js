@@ -23,7 +23,8 @@ class GeminiService {
       responseMimeType: 'application/json',
     };
 
-    // Check Gemini API key
+    // Check Gemini API key and set preference
+    this.isGemini = !!this.geminiApiKey;
     if (!this.geminiApiKey) {
       console.warn('⚠️  WARNING: GEMINI_API_KEY is not set. GeminiService will attempt OpenAI fallback or use default responses.');
     }
@@ -54,9 +55,7 @@ class GeminiService {
     // Bind methods
     this._createPrompt = this._createPrompt.bind(this);
     this._parseResponse = this._parseResponse.bind(this); 
-    this._parseOpenAIResponse = this._parseOpenAIResponse.bind(this); 
-    this._createDefaultTrainingPlan = this._createDefaultTrainingPlan.bind(this);
-    this._generatePlanWithOpenAI = this._generatePlanWithOpenAI.bind(this); 
+        // REMOVED: OpenAI and emergency fallback methods bindings - no longer needed 
     this._generateCorrectiveExercises = this._generateCorrectiveExercises.bind(this);
     this._createCorrectiveExercisesPrompt = this._createCorrectiveExercisesPrompt.bind(this);
 
@@ -83,14 +82,23 @@ class GeminiService {
     this.log('\n=== ROZPOCZĘCIE GENEROWANIA PLANU TRENINGOWEGO ===');
     this.log('1. Dane wejściowe użytkownika:', userData);
 
-    // 1. Try Gemini API first
-    if (this.geminiApiKey) {
+    // Sprawdź czy Gemini API jest skonfigurowane
+    if (!this.geminiApiKey) {
+      throw new AppError('Gemini API nie jest skonfigurowane. Skontaktuj się z administratorem.', 500);
+    }
+
+    // Konfiguracja retry
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 sekunda
+    
+    // Spróbuj wygenerować plan używając Gemini API z retry logic
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        this.log('\n--- PRÓBA WYGENEROWANIA PLANU PRZEZ GEMINI ---');
+        this.log(`\n--- PRÓBA ${attempt}/${maxRetries} WYGENEROWANIA PLANU PRZEZ GEMINI ---`);
         this.log('\n2. Tworzenie promptu dla Gemini...');
         const prompt = this._createPrompt(userData);
         
-        // Odkomentowanie i rozszerzenie logowania promptu
+        // Logowanie promptu
         this.log('Wygenerowany prompt:');
         this.log('----------------------------------------');
         this.log(prompt);
@@ -141,118 +149,74 @@ class GeminiService {
         this.log(`- MaxTokens: ${this.geminiGenerationConfig.maxOutputTokens}`);
 
         this.log('\n5. Wysyłanie żądania do Gemini API...');
-        // this.log('Request body:', requestBody); 
 
         const response = await this.axiosClient.post(requestUrl, requestBody, {
           headers: { 'Content-Type': 'application/json' },
+          timeout: 30000, // 30 sekund timeout
         });
 
         this.log('\n6. Otrzymano odpowiedź z Gemini API.');
-        // this.log('Odpowiedź API:', response.data); 
-
         this.log('\n7. Parsowanie odpowiedzi Gemini...');
         const trainingPlan = this._parseResponse(response.data); 
 
         this.log('\n8. Zwalidowano i sparsowano plan treningowy z Gemini.');
-        // this.log('Sparsowany plan:', trainingPlan);
-
         this.log('\n=== ZAKOŃCZONO GENEROWANIE PLANU (GEMINI) ===');
         return trainingPlan;
 
       } catch (geminiError) {
-        this.error('\n⚠️ Błąd podczas generowania planu przez Gemini:', {
+        this.error(`\n⚠️ Błąd podczas próby ${attempt}/${maxRetries} generowania planu przez Gemini:`, {
           message: geminiError.message,
           status: geminiError.response?.status,
           data: geminiError.response?.data,
           stack: geminiError.stack
         });
-        // Jeśli Gemini zawiedzie ORAZ OpenAI nie jest dostępne, rzuć błąd
-        if (!this.openai) {
-          throw new AppError(`Nie udało się wygenerować planu treningowego: ${geminiError.message}`, geminiError.response?.status || 500);
+        
+        // Sprawdź czy to błąd, który może się powieść przy ponownej próbie
+        const isRetryableError = this._isRetryableError(geminiError);
+        
+        if (attempt < maxRetries && isRetryableError) {
+          const delay = baseDelay * Math.pow(2, attempt - 1); // Eksponencjalny backoff
+          this.log(`Czekanie ${delay}ms przed kolejną próbą...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue; // Spróbuj ponownie
         }
-        // W przeciwnym razie, przechodzimy do OpenAI (jeśli skonfigurowane)
+        
+        // Jeśli to ostatnia próba lub błąd nie nadaje się do retry, rzuć błąd
+        throw new AppError(
+          `Nie udało się wygenerować planu treningowego po ${maxRetries} próbach. Spróbuj ponownie za kilka minut.`, 
+          geminiError.response?.status || 500
+        );
       }
-    } else {
-      this.log('Klucz API Gemini nie jest ustawiony, pomijanie próby Gemini.');
     }
+  }
 
-    // 2. Try OpenAI API as fallback
-    if (this.openai) {
-        try {
-            this.log('\n--- PRÓBA WYGENEROWANIA PLANU PRZEZ OPENAI (FALLBACK) ---');
-            const prompt = this._createPrompt(userData); 
-            const trainingPlan = await this._generatePlanWithOpenAI(userData, prompt);
-            this.log('\n=== ZAKOŃCZONO GENEROWANIE PLANU (OPENAI FALLBACK) ===');
-            return trainingPlan;
-        } catch (openaiError) {
-            this.error('\n⚠️ Błąd podczas generowania planu przez OpenAI (fallback):', {
-                message: openaiError.message,
-                status: openaiError.response?.status,
-                data: openaiError.response?.data,
-                stack: openaiError.stack
-            });
-            // Jeśli OpenAI również zawiedzie, rzuć błąd przed przejściem do domyślnego planu
-            throw new AppError(`Nie udało się wygenerować planu treningowego po fallbacku do OpenAI: ${openaiError.message}`, openaiError.response?.status || 500);
-        }
-    } else {
-        this.log('OpenAI nie skonfigurowane, pomijanie próby fallbacku OpenAI.');
-        // Jeśli Gemini nie zadziałało i OpenAI nie jest skonfigurowane, a doszliśmy tutaj,
-        // to znaczy, że błąd Gemini nie został rzucony (bo this.openai było fałszywe w bloku catch Gemini)
-        // lub klucz Gemini nie był ustawiony. W tej sytuacji, jeśli nie ma klucza Gemini i nie ma OpenAI,
-        // a użytkownik oczekuje planu, rzucenie błędu tutaj może być zbyt wczesne.
-        // Logika testu powinna to uwzględnić.
-        // Jednak jeśli Gemini API key był, ale zawiódł, i nie ma OpenAI, błąd powinien być już rzucony wyżej.
-    }
-
-    // 3. Fallback to default plan if both APIs fail or are not configured
-    // Ten kod zostanie osiągnięty tylko jeśli:
-    //    a) Klucz Gemini nie jest ustawiony ORAZ OpenAI nie jest skonfigurowane.
-    //    b) Poprzednie bloki catch nie rzuciły błędu (co nie powinno się zdarzyć po modyfikacji).
-    this.log('\n--- GENEROWANIE PLANU DOMYŚLNEGO (FALLBACK OSTATECZNY) ---');
-    let trainingPlan = this._createDefaultTrainingPlan(userData);
-
-    // Generate and merge corrective exercises if injuries are reported
-    if (userData.kontuzje && this.correctiveExercisesKnowledgeBase) {
-      try {
-        this.log('\n--- GENEROWANIE ĆWICZEŃ KOREKCYJNYCH ---');
-        const correctiveExercisesData = await this._generateCorrectiveExercises(userData, this.correctiveExercisesKnowledgeBase);
-        if (correctiveExercisesData) {
-          trainingPlan.corrective_exercises = correctiveExercisesData;
-          this.log('Pomyślnie zintegrowano ćwiczenia korekcyjne.');
-        } else {
-          this.log('Nie udało się wygenerować ćwiczeń korekcyjnych, używam domyślnych z planu awaryjnego.');
-          // Fallback to default corrective exercises if generation fails but injuries were reported
-          if (!trainingPlan.corrective_exercises || trainingPlan.corrective_exercises.list.length === 0) {
-             trainingPlan.corrective_exercises = {
-                frequency: "Wykonuj 2-3 razy w tygodniu (zalecenia awaryjne)",
-                list: [
-                  { name: "Rolowanie piankowe łydek", sets: 1, reps: null, duration: 60, description: "Rozluźnij mięśnie łydek." },
-                  { name: "Mostki biodrowe", sets: 3, reps: 15, duration: null, description: "Wzmocnij mięśnie stabilizujące miednicę." }
-                ]
-              };
-          }
-        }
-      } catch (corrExError) {
-        this.error('\n⚠️ Błąd podczas generowania ćwiczeń korekcyjnych:', corrExError);
-        // Fallback to default corrective exercises on error
-        if (!trainingPlan.corrective_exercises || trainingPlan.corrective_exercises.list.length === 0) {
-           trainingPlan.corrective_exercises = {
-              frequency: "Wykonuj 2-3 razy w tygodniu (zalecenia awaryjne po błędzie)",
-              list: [
-                { name: "Rolowanie piankowe łydek", sets: 1, reps: null, duration: 60, description: "Rozluźnij mięśnie łydek." },
-                { name: "Mostki biodrowe", sets: 3, reps: 15, duration: null, description: "Wzmocnij mięśnie stabilizujące miednicę." }
-              ]
-            };
-        }
-      }
-    } else if (!userData.kontuzje) {
-      trainingPlan.corrective_exercises = {
-        frequency: "Nie dotyczy - brak zgłoszonych kontuzji",
-        list: []
-      };
+  /**
+   * Sprawdza czy błąd nadaje się do ponownej próby
+   * @param {Error} error - Błąd do sprawdzenia
+   * @returns {boolean} - True jeśli błąd nadaje się do retry
+   */
+  _isRetryableError(error) {
+    // Błędy sieciowe
+    if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
+      return true;
     }
     
-    return trainingPlan;
+    // Błędy HTTP 5xx (serwer)
+    if (error.response && error.response.status >= 500) {
+      return true;
+    }
+    
+    // Rate limiting (429)
+    if (error.response && error.response.status === 429) {
+      return true;
+    }
+    
+    // Timeout błędy
+    if (error.message && error.message.includes('timeout')) {
+      return true;
+    }
+    
+    return false;
   }
 
   _createPrompt(userData) {
@@ -876,124 +840,41 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
     try {
       if (!apiResponse) {
         console.error('Otrzymano pustą odpowiedź z API');
-        return this._createDefaultTrainingPlan(this.userData);
+        throw new AppError('Otrzymano pustą odpowiedź z Gemini API', 500);
       }
       
       let plan;
       try {
         if (!apiResponse.candidates || !Array.isArray(apiResponse.candidates) || apiResponse.candidates.length === 0) {
           console.error('Nieprawidłowa struktura odpowiedzi - brak candidates:', apiResponse);
-          return this._createDefaultTrainingPlan(this.userData);
+          throw new AppError('Nieprawidłowa struktura odpowiedzi z Gemini API', 500);
         }
         
         const candidate = apiResponse.candidates[0];
         if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
           console.error('Nieprawidłowa struktura candidate - brak parts:', candidate);
-          return this._createDefaultTrainingPlan(this.userData);
+          throw new AppError('Nieprawidłowa struktura odpowiedzi z Gemini API', 500);
         }
         
         const textPart = candidate.content.parts[0];
         if (!textPart.text) {
           console.error('Brak tekstu w odpowiedzi:', textPart);
-          return this._createDefaultTrainingPlan(this.userData);
+          throw new AppError('Brak tekstu w odpowiedzi z Gemini API', 500);
         }
         
         const candidates = textPart.text;
         console.log('Wyodrębniony tekst z odpowiedzi:', candidates);
         
-        try {
-          if (!candidates) {
-            throw new Error('Otrzymano pusty tekst');
-          }
-          
-          if (candidates.trim().startsWith('null') || candidates.trim().startsWith('undefined')) {
-            throw new Error(`Otrzymano nieprawidłową wartość: ${candidates.trim().substring(0, 20)}...`);
-          }
-          
-          plan = JSON.parse(candidates);
-          console.log('Pomyślnie sparsowano JSON bezpośrednio');
-        } catch (parseError) {
-          console.error('Błąd parsowania JSON z odpowiedzi:', parseError);
-          console.log('Próba znalezienia struktury JSON w tekście...');
-          
-          const jsonMatch = candidates.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              const jsonCandidate = jsonMatch[0];
-              console.log('Znaleziono potencjalny JSON:', jsonCandidate.substring(0, 100) + '...');
-              plan = JSON.parse(jsonCandidate);
-              console.log('Pomyślnie sparsowano wyodrębniony JSON');
-            } catch (secondParseError) {
-              console.error('Błąd parsowania wyodrębnionego JSON:', secondParseError);
-              
-              try {
-                let fixedJson = jsonMatch[0];
-                fixedJson = fixedJson.replace(/([\{\[,:]\s*)'([^']*)'(\s*[\}\],:])/g, '$1"$2"$3');
-                fixedJson = fixedJson.replace(/(\{|,)\s*([a-zA-Z0-9_]+)\s*:/g, '$1"$2":');
-                console.log('Próba naprawy JSON:', fixedJson.substring(0, 100) + '...');
-                
-                plan = JSON.parse(fixedJson);
-                console.log('Pomyślnie sparsowano naprawiony JSON');
-              } catch (thirdParseError) {
-                console.error('Nie udało się naprawić JSON:', thirdParseError);
-                return this._createDefaultTrainingPlan(this.userData);
-              }
-            }
-          } else {
-            console.error('Nie znaleziono struktury JSON w odpowiedzi');
-            return this._createDefaultTrainingPlan(this.userData);
-          }
-        }
+        // Ulepszone parsowanie JSON z wieloma strategiami naprawy
+        plan = this._parseJSONWithFallbacks(candidates);
+        
       } catch (error) {
         console.error('Błąd podczas przetwarzania odpowiedzi:', error);
-        return this._createDefaultTrainingPlan(this.userData);
+        throw new AppError('Błąd podczas przetwarzania odpowiedzi z Gemini API: ' + error.message, 500);
       }
       
-      if (!plan.id || !plan.metadata || !plan.plan_weeks) {
-        console.error('Brakujące pola w planie:', {
-          hasId: !!plan.id,
-          hasMetadata: !!plan.metadata,
-          hasPlanWeeks: !!plan.plan_weeks
-        });
-        throw new Error('Nieprawidłowa struktura planu - brakujące wymagane pola');
-      }
-
-      if (this.userData && this.userData.planDuration) {
-        const expectedDuration = parseInt(this.userData.planDuration, 10);
-        if (!isNaN(expectedDuration)) {
-          if (!plan.metadata.duration_weeks) {
-            console.warn(`Brak duration_weeks w planie, ustawiam na ${expectedDuration}`);
-            plan.metadata.duration_weeks = expectedDuration;
-          } else if (plan.metadata.duration_weeks !== expectedDuration) {
-            console.warn(`duration_weeks (${plan.metadata.duration_weeks}) nie zgadza się z planDuration (${expectedDuration})`);
-            plan.metadata.duration_weeks = expectedDuration;
-          }
-        }
-      }
-
-      const defaultDays = ['poniedziałek', 'środa', 'piątek'];
-      
-      if (!Array.isArray(plan.plan_weeks)) {
-        console.error('plan_weeks nie jest tablicą:', plan.plan_weeks);
-        plan.plan_weeks = [];
-      }
-      
-      plan.plan_weeks.forEach((week, weekIndex) => {
-        if (!week.days || !Array.isArray(week.days)) {
-          console.warn(`Brak dni w tygodniu ${weekIndex + 1} lub nie jest tablicą`);
-          week.days = [];
-          return;
-        }
-        
-        week.days.forEach((day, dayIndex) => {
-          if (!day.day_name) {
-            console.warn(`Brak nazwy dnia w tygodniu ${weekIndex + 1}, dzień ${dayIndex + 1}`);
-            day.day_name = defaultDays[dayIndex % defaultDays.length];
-          } else if (day.day_name.startsWith('Dzień')) {
-            day.day_name = defaultDays[dayIndex % defaultDays.length];
-          }
-        });
-      });
+      // Ulepszona walidacja i naprawa planu
+      plan = this._validateAndRepairPlan(plan);
       
       return plan;
     } catch (error) {
@@ -1002,357 +883,430 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
     }
   }
 
-  // Nowa metoda do generowania planu przy użyciu OpenAI
-  async _generatePlanWithOpenAI(userData, prompt) {
-    if (!this.openai) {
-      throw new AppError('OpenAI client is not initialized.', 500);
-    }
-
-    this.log('\n2a. Konfiguracja żądania do OpenAI API:');
-    this.log(`- Model: ${this.openaiModel}`);
-    this.log(`- Temperature: ${this.openaiTemperature}`);
-    this.log(`- MaxTokens: ${this.openaiMaxTokens}`);
-    this.log(`- TopP: ${this.openaiTopP}`);
-
-    // Dodaję logowanie promptu dla OpenAI
-    this.log('\nPrompt wysyłany do OpenAI:');
-    this.log('----------------------------------------');
-    this.log(prompt);
-    this.log('----------------------------------------');
-
-    this.log('\n3a. Wysyłanie żądania do OpenAI API...');
-
-    const messages = [
-      {
-        role: 'system',
-        content: 'Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Twoim zadaniem jest wygenerowanie szczegółowego planu w formacie JSON na podstawie danych użytkownika. Zwróć tylko i wyłącznie poprawny obiekt JSON, bez żadnych dodatkowych komentarzy, wstępów czy wyjaśnień.'
-      },
-      {
-        role: 'user',
-        content: prompt
-      }
-    ];
-
-    const requestBody = {
-        model: this.openaiModel,
-        messages: messages,
-        temperature: this.openaiTemperature,
-        max_tokens: this.openaiMaxTokens,
-        top_p: this.openaiTopP,
-        response_format: { type: "json_object" }, 
-        frequency_penalty: openaiConfig.frequencyPenalty,
-        presence_penalty: openaiConfig.presencePenalty,
-    };
-    // this.log('OpenAI Request Body:', requestBody); 
-
-    const response = await this.openai.chat.completions.create(requestBody, {
-        timeout: openaiConfig.timeout
-    });
-
-    this.log('\n4a. Otrzymano odpowiedź z OpenAI API.');
-    // this.log('Odpowiedź API OpenAI:', response); 
-
-    this.log('\n5a. Parsowanie odpowiedzi OpenAI...');
-    const trainingPlan = this._parseOpenAIResponse(response);
-
-    this.log('\n6a. Zwalidowano i sparsowano plan treningowy z OpenAI.');
-    // this.log('Sparsowany plan OpenAI:', trainingPlan);
-    return trainingPlan;
-  }
-
-  // Nowa metoda do parsowania odpowiedzi z OpenAI
-  _parseOpenAIResponse(apiResponse) {
-    this.log('Rozpoczęcie parsowania odpowiedzi OpenAI');
+  /**
+   * Parsuje JSON z wieloma strategiami fallback
+   * @param {string} jsonText - Tekst do parsowania
+   * @returns {Object} - Sparsowany obiekt
+   */
+  _parseJSONWithFallbacks(jsonText) {
     try {
-        if (!apiResponse || !apiResponse.choices || apiResponse.choices.length === 0 || !apiResponse.choices[0].message || !apiResponse.choices[0].message.content) {
-            console.error('Niekompletna lub pusta odpowiedź OpenAI:', apiResponse);
-            throw new AppError('Niekompletna odpowiedź z API OpenAI.', 500);
-        }
-
-        const jsonString = apiResponse.choices[0].message.content;
-        this.log('Surowy JSON z OpenAI:', jsonString);
-
-        const plan = JSON.parse(jsonString);
-
-        // Dodatkowa walidacja struktury planu (podobna do tej w _parseGeminiResponse)
-        if (!plan || typeof plan !== 'object') {
-          throw new Error('Odpowiedź nie jest poprawnym obiektem JSON.');
-        }
-
-        // Sprawdzenie kluczowych pól, teraz włączając nowe
-        const requiredKeys = ['metadata', 'plan_weeks', 'corrective_exercises', 'pain_monitoring', 'notes'];
-        for (const key of requiredKeys) {
-          if (!plan[key]) {
-            console.warn(`Ostrzeżenie: Brakujący klucz '${key}' w odpowiedzi OpenAI.`);
-            // Można zdecydować czy rzucić błąd, czy ustawić domyślną wartość
-            // Na razie tylko ostrzegamy, ale można dodać domyślne wartości poniżej
-            // if (key === 'corrective_exercises') plan[key] = { frequency: "nie określono", list: [] };
-            // if (key === 'pain_monitoring') plan[key] = { scale: "nie określono", rules: [] };
-          }
-        }
-
-        // Podobna logika czyszczenia nazw dni jak w Gemini
-        const defaultDays = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Niedz'];
-        if (plan.plan_weeks && Array.isArray(plan.plan_weeks)) {
-            plan.plan_weeks.forEach((week, weekIndex) => {
-                if (week.days && Array.isArray(week.days)) {
-                    week.days.forEach((day, dayIndex) => {
-                        if (!day.day_name || day.day_name.startsWith('Dzień')) {
-                            day.day_name = defaultDays[dayIndex % defaultDays.length];
-                        }
-                    });
-                } else {
-                     console.warn(`Brak dni w tygodniu ${weekIndex + 1} lub nie jest tablicą (OpenAI)`);
-                     week.days = [];
-                }
-            });
-        } else {
-             console.warn('plan_weeks nie jest tablicą lub nie istnieje (OpenAI)');
-             plan.plan_weeks = [];
-        }
-
-        this.log('Parsowanie odpowiedzi OpenAI zakończone sukcesem.');
+      if (!jsonText) {
+        throw new Error('Otrzymano pusty tekst');
+      }
+      
+      if (jsonText.trim().startsWith('null') || jsonText.trim().startsWith('undefined')) {
+        throw new Error(`Otrzymano nieprawidłową wartość: ${jsonText.trim().substring(0, 20)}...`);
+      }
+      
+      // Strategia 1: Bezpośrednie parsowanie JSON
+      try {
+        const plan = JSON.parse(jsonText);
+        console.log('Pomyślnie sparsowano JSON bezpośrednio');
         return plan;
+      } catch (parseError) {
+        console.error('Błąd parsowania JSON z odpowiedzi:', parseError);
+      }
+      
+      // Strategia 2: Wyodrębnienie JSON z tekstu
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const jsonCandidate = jsonMatch[0];
+          console.log('Znaleziono potencjalny JSON:', jsonCandidate.substring(0, 100) + '...');
+          const plan = JSON.parse(jsonCandidate);
+          console.log('Pomyślnie sparsowano wyodrębniony JSON');
+          return plan;
+        } catch (secondParseError) {
+          console.error('Błąd parsowania wyodrębnionego JSON:', secondParseError);
+        }
+        
+        // Strategia 3: Naprawa typowych błędów JSON
+        try {
+          let fixedJson = jsonMatch[0];
+          
+          // Naprawa cudzysłowów
+          fixedJson = fixedJson.replace(/([\{\[,:]\s*)'([^']*)'(\s*[\}\],:])/g, '$1"$2"$3');
+          fixedJson = fixedJson.replace(/(\{|,)\s*([a-zA-Z0-9_]+)\s*:/g, '$1"$2":');
+          
+          // Naprawa wielokrotnych przecinków
+          fixedJson = fixedJson.replace(/,+/g, ',');
+          
+          // Naprawa nieprawidłowych wartości null i undefined
+          fixedJson = fixedJson.replace(/:\s*undefined/g, ': null');
+          fixedJson = fixedJson.replace(/:\s*NaN/g, ': null');
+          
+          // Naprawa końcowych przecinków
+          fixedJson = fixedJson.replace(/,(\s*[\}\]])/g, '$1');
+          
+          console.log('Próba naprawy JSON:', fixedJson.substring(0, 100) + '...');
+          
+          const plan = JSON.parse(fixedJson);
+          console.log('Pomyślnie sparsowano naprawiony JSON');
+          return plan;
+        } catch (thirdParseError) {
+          console.error('Nie udało się naprawić JSON:', thirdParseError);
+        }
+        
+        // Strategia 4: Częściowe parsowanie kluczowych sekcji
+        try {
+          const partialPlan = this._parsePartialJSON(jsonMatch[0]);
+          if (partialPlan) {
+            console.log('Pomyślnie sparsowano częściowy JSON');
+            return partialPlan;
+          }
+        } catch (partialError) {
+          console.error('Nie udało się sparsować częściowo:', partialError);
+        }
+      } else {
+        console.error('Nie znaleziono struktury JSON w odpowiedzi');
+      }
+      
+      throw new Error('Nie udało się sparsować JSON żadną ze strategii');
     } catch (error) {
-        console.error('Błąd podczas parsowania odpowiedzi OpenAI:', error, 'Oryginalna odpowiedź:', apiResponse?.choices?.[0]?.message?.content);
-        throw new AppError('Nieprawidłowa odpowiedź JSON z API OpenAI: ' + error.message, 500);
+      console.error('Całkowity błąd parsowania:', error);
+      throw error;
     }
   }
 
-  _createDefaultTrainingPlan(userData) {
-    console.log('Tworzenie domyślnego planu treningowego');
-    const currentData = userData || this.userData || {}; 
-
-    const formatDate = (date) => {
-      const year = date.getFullYear();
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const day = date.getDate().toString().padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
-    let effectivePlanStartDate = new Date(); // Domyślnie dzisiaj
-    effectivePlanStartDate.setHours(0, 0, 0, 0);
-
-    if (currentData.planStartDate) {
-      const parsedStartDate = new Date(currentData.planStartDate);
-      parsedStartDate.setHours(0,0,0,0);
-      if (!isNaN(parsedStartDate.getTime()) && parsedStartDate >= effectivePlanStartDate) {
-        effectivePlanStartDate = parsedStartDate;
-      }
-    } 
-  
-    // Użyj nowych pól z schematu lub wartości domyślnych
-    const imieNazwisko = currentData.imieNazwisko || 'Użytkownik';
-    const poziomZaawansowania = currentData.poziomZaawansowania || 'poczatkujacy';
-
-    // Domyślna długość planu zależna od celu użytkownika
-    let planDuration = 8; // domyślnie 8 tygodni
-    const mainGoal = currentData.glownyCel;
-    const targetDistanceGoal = currentData.dystansDocelowy;
-
-    switch (mainGoal) {
-      case 'redukcja_masy_ciala':
-      case 'aktywny_tryb_zycia':
-      case 'zmiana_nawykow':
-      case 'powrot_po_kontuzji':
-      case 'poprawa_kondycji':
-      case 'inny_cel':
-        planDuration = 8;
-        break;
-      case 'zaczac_biegac':
-        planDuration = 6;
-        break;
-      case 'przebiegniecie_dystansu':
-        // Użyj zmiennej o zmienionej nazwie
-        switch (targetDistanceGoal) {
-          case '5km':
-            planDuration = 6;
-            break;
-          case '10km':
-            planDuration = 8;
-            break;
-          case 'polmaraton':
-            planDuration = 12;
-            break;
-          case 'maraton':
-            planDuration = 16;
-            break;
-          default: // inny dystans lub brak
-            planDuration = 8;
-            break;
-        }
-        break;
-      default:
-        planDuration = 8; // Domyślna wartość, jeśli cel nieznany
-        break;
-    }
-
-    // Tworzenie pustego zestawu tygodni
-    const planWeeks = [];
-    for (let weekNum = 1; weekNum <= planDuration; weekNum++) {
-      const focus = weekNum <= 2 ? "Budowanie bazy" : 
-                    weekNum <= 4 ? "Rozwój wytrzymałości" : 
-                    weekNum <= planDuration - 2 ? "Intensyfikacja treningów" :
-                    "Tapering przed zawodami";
-
-      // Ustal dni treningowe bazując na schemacie lub domyślne
-      const treningoweDni = currentData.dniTreningowe || ["poniedziałek", "środa", "sobota"];
-      
-      // Mapa dni tygodnia dla poprawnej kolejności
-      const daysOrder = {
-        "poniedziałek": 1,
-        "wtorek": 2,
-        "środa": 3,
-        "czwartek": 4,
-        "piątek": 5,
-        "sobota": 6,
-        "niedziela": 7
+  /**
+   * Parsuje JSON częściowo, wyodrębniając kluczowe sekcje
+   * @param {string} jsonText - Tekst JSON do parsowania
+   * @returns {Object|null} - Częściowo sparsowany plan lub null
+   */
+  _parsePartialJSON(jsonText) {
+    try {
+      const plan = {
+        id: this._extractField(jsonText, 'id') || 'default-plan-' + Date.now(),
+        metadata: {},
+        plan_weeks: [],
+        corrective_exercises: { frequency: "codziennie", list: [] },
+        pain_monitoring: { 
+          scale: "Skala bólu 1-10 (1=brak, 10=nie do zniesienia)",
+          rules: [
+            "Ból 1-3: Kontynuuj trening normalnie",
+            "Ból 4-6: Zmniejsz intensywność", 
+            "Ból 7-10: Przerwij trening, skonsultuj się z lekarzem"
+          ]
+        },
+        notes: []
       };
       
-      // Posortuj dni treningowe według kolejności w tygodniu
-      const sortedTreningoweDni = [...treningoweDni].sort((a, b) => daysOrder[a] - daysOrder[b]);
-      
-      const days = sortedTreningoweDni.map((dayName, dayIndex) => {
-        let workoutType, description, distance, duration;
-        
-        // Obliczanie daty dla danego dnia treningowego
-        const dayOffset = daysOrder[dayName] - daysOrder[sortedTreningoweDni[0]];
-        const currentWorkoutDate = new Date(effectivePlanStartDate);
-        currentWorkoutDate.setDate(effectivePlanStartDate.getDate() + (weekNum - 1) * 7 + dayOffset);
-
-        // ULEPSZONA LOGIKA RÓŻNORODNOŚCI - szczególnie dla początkujących
-        if (poziomZaawansowania === 'poczatkujacy' || poziomZaawansowania === 'absolute_beginner') {
-          // Dla początkujących - znacznie więcej variacji
-          const beginnerWorkoutTypes = [
-            { type: "walk_run", description: "Wprowadzenie marsz-bieg z progresywnym wydłużaniem interwałów biegowych" },
-            { type: "mobility_walk", description: "Aktywny spacer z ćwiczeniami mobilności i rozciąganiem" },
-            { type: "active_recovery", description: "Delikatna aktywność regeneracyjna z elementami fitness" },
-            { type: "endurance_building", description: "Budowanie wytrzymałości poprzez wydłużanie czasu aktywności" },
-            { type: "technique_focus", description: "Koncentracja na technice i świadomości ruchu" },
-            { type: "interval_intro", description: "Łagodne wprowadzenie do treningów interwałowych" }
-          ];
-          
-          // Wybierz typ na podstawie dnia i tygodnia dla variacji
-          const typeIndex = (dayIndex + weekNum - 1) % beginnerWorkoutTypes.length;
-          const selectedWorkout = beginnerWorkoutTypes[typeIndex];
-          
-          workoutType = selectedWorkout.type;
-          description = selectedWorkout.description;
-          distance = weekNum <= 2 ? null : 1 + (weekNum - 1) * 0.5; // Początkowe tygodnie bez dystansu
-          duration = 15 + weekNum * 2 + dayIndex * 3; // Progresywny wzrost czasu
-          
-        } else {
-          // Dla średniozaawansowanych i zaawansowanych - rozszerzona logika
-          const advancedWorkoutMap = {
-            "poniedziałek": ["easy_run", "recovery_jog", "base_building"],
-            "wtorek": ["tempo_run", "threshold_training", "fartlek"],
-            "środa": ["interval_training", "speed_work", "hill_repeats"],
-            "czwartek": ["easy_run", "recovery_run", "technique_run"],
-            "piątek": ["tempo_run", "progression_run", "negative_split"],
-            "sobota": ["long_run", "endurance_run", "aerobic_base"],
-            "niedziela": ["long_run", "adventure_run", "exploration_run"]
+      // Wyodrębnij metadata
+      const metadataMatch = jsonText.match(/"metadata"\s*:\s*\{[^}]*\}/);
+      if (metadataMatch) {
+        try {
+          plan.metadata = JSON.parse(metadataMatch[0].replace('"metadata":', ''));
+        } catch (e) {
+          plan.metadata = {
+            duration_weeks: 8,
+            training_days_per_week: 3,
+            goal: "Poprawa kondycji"
           };
-          
-          const dayWorkouts = advancedWorkoutMap[dayName] || ["easy_run"];
-          const workoutIndex = weekNum % dayWorkouts.length;
-          workoutType = dayWorkouts[workoutIndex];
-          
-          // Bardziej zróżnicowane opisy
-          const descriptions = {
-            "easy_run": "Komfortowy bieg w strefie tlenowej budujący bazę wytrzymałościową",
-            "tempo_run": "Trening tempowy rozwijający próg mleczanowy",
-            "interval_training": "Intensywne interwały zwiększające VO2max",
-            "long_run": "Długi bieg budujący wytrzymałość specjalną",
-            "recovery_jog": "Regeneracyjny trucht wspomagający odnowę",
-            "fartlek": "Szwedzki fartlek z naturalnymi zmianami tempa"
-          };
-          
-          description = descriptions[workoutType] || "Zindywidualizowany trening biegowy";
-          distance = 5 + (weekNum - 1) * 0.7 + (dayIndex * 1.5);
-          duration = 35 + (weekNum - 1) * 7 + (dayIndex * 8);
         }
-        
-        // Zróżnicowane ćwiczenia uzupełniające
-        const supportExercisePool = [
-          { name: "Dynamiczne rozciąganie nóg", sets: 1, reps: null, duration: 8 },
-          { name: "Wzmacnianie core i stabilizacji", sets: 2, reps: 12, duration: null },
-          { name: "Mobilność stawów biodrowych", sets: 1, reps: 8, duration: null },
-          { name: "Aktywacja pośladków", sets: 2, reps: 10, duration: null },
-          { name: "Rozciąganie statyczne", sets: 1, reps: null, duration: 10 },
-          { name: "Ćwiczenia równowagi", sets: 2, reps: 6, duration: null },
-          { name: "Roller foam - regeneracja", sets: 1, reps: null, duration: 5 },
-          { name: "Wzmacnianie łydek", sets: 2, reps: 15, duration: null }
-        ];
-        
-        // Wybierz 2 różne ćwiczenia dla każdego dnia
-        const exercise1Index = (dayIndex + weekNum) % supportExercisePool.length;
-        const exercise2Index = (dayIndex + weekNum + 3) % supportExercisePool.length;
-        
-        return {
-          day_name: dayName,
-          date: formatDate(currentWorkoutDate),
-          workout: {
-            type: workoutType,
-            description: description,
-            distance: distance ? parseFloat(distance.toFixed(1)) : null,
-            duration: duration,
-            target_heart_rate: {
-              min: 120 + dayIndex * 5,
-              max: 150 + dayIndex * 8,
-              zone: `Strefa ${Math.min(2 + Math.floor(dayIndex/2), 4)} (${dayIndex % 2 === 0 ? 'Łatwe tempo' : 'Umiarkowane tempo'})`
-            },
-            support_exercises: [
-              supportExercisePool[exercise1Index],
-              supportExercisePool[exercise2Index]
-            ]
-          }
-        };
-      });
+      }
       
-      planWeeks.push({
-        week_num: weekNum,
-        focus: focus,
-        days: days
+      // Wyodrębnij plan_weeks (uproszczone)
+      const weeksMatch = jsonText.match(/"plan_weeks"\s*:\s*\[[\s\S]*?\]/);
+      if (weeksMatch) {
+        try {
+          const weeksArray = JSON.parse(weeksMatch[0].replace('"plan_weeks":', ''));
+          plan.plan_weeks = weeksArray;
+        } catch (e) {
+          // Użyj domyślnego planu jeśli nie udało się sparsować
+          plan.plan_weeks = this._createDefaultWeeks();
+        }
+      } else {
+        plan.plan_weeks = this._createDefaultWeeks();
+      }
+      
+      return plan;
+    } catch (error) {
+      console.error('Błąd parsowania częściowego:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Wyodrębnia wartość pola z tekstu JSON
+   * @param {string} text - Tekst do przeszukania
+   * @param {string} field - Nazwa pola
+   * @returns {string|null} - Wartość pola lub null
+   */
+  _extractField(text, field) {
+    const regex = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 'i');
+    const match = text.match(regex);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Tworzy domyślne tygodnie planu
+   * @returns {Array} - Tablica tygodni
+   */
+  _createDefaultWeeks() {
+    const weeks = [];
+    for (let i = 1; i <= 6; i++) {
+      weeks.push({
+        week_num: i,
+        focus: i <= 2 ? "Budowanie bazy" : i <= 4 ? "Rozwój wytrzymałości" : "Intensyfikacja",
+        days: [
+          {
+            day_name: "poniedziałek",
+            date: new Date(Date.now() + (i-1) * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            workout: {
+              type: "easy_run",
+              description: "Łagodny bieg budujący bazę wytrzymałościową",
+              distance: 3 + i * 0.5,
+              duration: 25 + i * 5,
+              target_heart_rate: { min: 120, max: 150, zone: "Strefa 2" },
+              support_exercises: []
+            }
+          }
+        ]
       });
     }
+    return weeks;
+  }
 
-    // Upewnij się, że treningoweDni jest zdefiniowane również tutaj dla metadanych
-    const finalTreningoweDni = currentData.dniTreningowe || ["poniedziałek", "środa", "sobota"];
+  /**
+   * Waliduje i naprawia plan treningowy
+   * @param {Object} plan - Plan do walidacji
+   * @returns {Object} - Naprawiony plan
+   */
+  _validateAndRepairPlan(plan) {
+    if (!plan || typeof plan !== 'object') {
+      throw new Error('Plan nie jest prawidłowym obiektem');
+    }
 
+    // Naprawa brakujących podstawowych pól
+    if (!plan.id) {
+      plan.id = 'generated-plan-' + Date.now();
+      console.warn('Dodano brakujące ID planu');
+    }
+
+    if (!plan.metadata || typeof plan.metadata !== 'object') {
+      plan.metadata = {
+        duration_weeks: 8,
+        training_days_per_week: 3,
+        goal: "Poprawa kondycji",
+        created_at: new Date().toISOString()
+      };
+      console.warn('Dodano brakujące metadata');
+    }
+
+    if (!plan.plan_weeks || !Array.isArray(plan.plan_weeks)) {
+      console.error('Brakujące lub nieprawidłowe plan_weeks, tworzenie domyślnych');
+      plan.plan_weeks = this._createDefaultWeeks();
+    }
+
+    // Walidacja i naprawa tygodni
+    plan.plan_weeks = plan.plan_weeks.map((week, index) => {
+      if (!week || typeof week !== 'object') {
+        return this._createDefaultWeek(index + 1);
+      }
+
+      if (!week.week_num) week.week_num = index + 1;
+      if (!week.focus) week.focus = "Trening ogólnorozwojowy";
+      
+      if (!week.days || !Array.isArray(week.days)) {
+        week.days = this._createDefaultDays(index + 1);
+      } else {
+        // Walidacja dni
+        week.days = week.days.map((day, dayIndex) => {
+          return this._validateAndRepairDay(day, dayIndex);
+        });
+      }
+
+      return week;
+    });
+
+    // Dodanie brakujących sekcji
+    if (!plan.corrective_exercises) {
+      plan.corrective_exercises = { frequency: "codziennie", list: [] };
+    }
+
+    if (!plan.pain_monitoring) {
+      plan.pain_monitoring = {
+        scale: "Skala bólu 1-10 (1=brak, 10=nie do zniesienia)",
+        rules: [
+          "Ból 1-3: Kontynuuj trening normalnie",
+          "Ból 4-6: Zmniejsz intensywność",
+          "Ból 7-10: Przerwij trening, skonsultuj się z lekarzem"
+        ]
+      };
+    }
+
+    if (!plan.notes) {
+      plan.notes = [];
+    }
+
+    // Synchronizacja metadata z rzeczywistą zawartością
+    if (this.userData && this.userData.planDuration) {
+      const expectedDuration = parseInt(this.userData.planDuration, 10);
+      if (!isNaN(expectedDuration)) {
+        plan.metadata.duration_weeks = expectedDuration;
+        
+        // Dostosuj liczbę tygodni jeśli potrzeba
+        if (plan.plan_weeks.length !== expectedDuration) {
+          plan.plan_weeks = this._adjustWeeksCount(plan.plan_weeks, expectedDuration);
+        }
+      }
+    }
+
+    console.log('Plan zwalidowany i naprawiony pomyślnie');
+    return plan;
+  }
+
+  /**
+   * Waliduje i naprawia dzień treningowy
+   * @param {Object} day - Dzień do walidacji
+   * @param {number} dayIndex - Indeks dnia
+   * @returns {Object} - Naprawiony dzień
+   */
+  _validateAndRepairDay(day, dayIndex) {
+    const defaultDays = ['poniedziałek', 'środa', 'piątek', 'niedziela', 'wtorek', 'czwartek', 'sobota'];
+    
+    if (!day || typeof day !== 'object') {
+      return this._createDefaultDay(defaultDays[dayIndex % defaultDays.length]);
+    }
+
+    if (!day.day_name) {
+      day.day_name = defaultDays[dayIndex % defaultDays.length];
+    }
+
+    if (!day.date) {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + dayIndex);
+      day.date = futureDate.toISOString().split('T')[0];
+    }
+
+    if (!day.workout || typeof day.workout !== 'object') {
+      day.workout = this._createDefaultWorkout();
+    } else {
+      // Walidacja i naprawa workout
+      if (!day.workout.type) day.workout.type = "easy_run";
+      if (!day.workout.description) day.workout.description = "Trening biegowy";
+      if (typeof day.workout.distance !== 'number') day.workout.distance = 5;
+      if (typeof day.workout.duration !== 'number') day.workout.duration = 30;
+      
+      if (!day.workout.target_heart_rate) {
+        day.workout.target_heart_rate = { min: 120, max: 150, zone: "Strefa 2" };
+      }
+      
+      if (!day.workout.support_exercises) {
+        day.workout.support_exercises = [];
+      }
+    }
+
+    return day;
+  }
+
+  /**
+   * Tworzy domyślny dzień treningowy
+   * @param {string} dayName - Nazwa dnia
+   * @returns {Object} - Domyślny dzień
+   */
+  _createDefaultDay(dayName) {
     return {
-      id: `plan_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      metadata: {
-        discipline: "running",
-        target_group: poziomZaawansowania === "poczatkujacy" ? "Biegacze początkujący" : 
-                     poziomZaawansowania === "sredniozaawansowany" ? "Biegacze średniozaawansowani" : 
-                     "Biegacze zaawansowani", 
-        target_goal: currentData.glownyCel || "poprawa_kondycji", 
-        level_hint: poziomZaawansowania, 
-        days_per_week: finalTreningoweDni.length.toString(), 
-        duration_weeks: planDuration, 
-        description: `Plan treningowy dla ${imieNazwisko} (wygenerowany awaryjnie)`,
-        author: "RunFitting AI"
-      },
-      plan_weeks: planWeeks,
-      corrective_exercises: {
-        frequency: "Nie dotyczy - brak zgłoszonych kontuzji",
-        list: []
-      },
-      pain_monitoring: {
-        scale: "0-10",
-        rules: ["Przerwij trening przy bólu powyżej 5/10", "Skonsultuj się z lekarzem przy utrzymującym się bólu"]
-      },
-      notes: [
-        "Dostosuj plan do swoich możliwości",
-        "Pamiętaj o nawodnieniu przed, w trakcie i po treningu",
-        "Rozgrzewka i rozciąganie są niezbędnymi elementami każdego treningu",
-        "Monitoruj swoje postępy",
-        "Odpoczynek jest równie ważny jak trening",
-        "Ten plan jest planem awaryjnym i może wymagać dostosowania",
-        "W przypadku kontuzji lub bólu skonsultuj się z lekarzem"
-      ]
+      day_name: dayName,
+      date: new Date().toISOString().split('T')[0],
+      workout: this._createDefaultWorkout()
     };
   }
+
+  /**
+   * Tworzy domyślny trening
+   * @returns {Object} - Domyślny trening
+   */
+  _createDefaultWorkout() {
+    return {
+      type: "easy_run",
+      description: "Łagodny bieg budujący bazę wytrzymałościową",
+      distance: 5,
+      duration: 30,
+      target_heart_rate: { min: 120, max: 150, zone: "Strefa 2" },
+      support_exercises: []
+    };
+  }
+
+  /**
+   * Dostosowuje liczbę tygodni w planie
+   * @param {Array} weeks - Obecne tygodnie
+   * @param {number} targetCount - Docelowa liczba tygodni
+   * @returns {Array} - Dostosowane tygodnie
+   */
+  _adjustWeeksCount(weeks, targetCount) {
+    if (weeks.length === targetCount) return weeks;
+    
+    if (weeks.length > targetCount) {
+      return weeks.slice(0, targetCount);
+    } else {
+      const newWeeks = [...weeks];
+      for (let i = weeks.length + 1; i <= targetCount; i++) {
+        newWeeks.push(this._createDefaultWeek(i));
+      }
+      return newWeeks;
+    }
+  }
+
+  /**
+   * Tworzy domyślny tydzień
+   * @param {number} weekNum - Numer tygodnia
+   * @returns {Object} - Domyślny tydzień
+   */
+  _createDefaultWeek(weekNum) {
+    return {
+      week_num: weekNum,
+      focus: weekNum <= 2 ? "Budowanie bazy" : weekNum <= 4 ? "Rozwój wytrzymałości" : "Intensyfikacja",
+      days: this._createDefaultDays(weekNum)
+    };
+  }
+
+  /**
+   * Tworzy domyślne dni dla tygodnia
+   * @param {number} weekNum - Numer tygodnia
+   * @returns {Array} - Tablica dni
+   */
+  _createDefaultDays(weekNum) {
+    const defaultDays = ['poniedziałek', 'środa', 'piątek'];
+    return defaultDays.map((dayName, index) => ({
+      day_name: dayName,
+      date: this._calculateDate(weekNum, index),
+      workout: {
+        type: index === 0 ? "easy_run" : index === 1 ? "tempo_run" : "long_run",
+        description: index === 0 ? "Łagodny bieg" : index === 1 ? "Trening tempowy" : "Długi bieg",
+        distance: 3 + weekNum * 0.5 + index,
+        duration: 25 + weekNum * 2 + index * 5,
+        target_heart_rate: { 
+          min: 120 + index * 10, 
+          max: 150 + index * 10, 
+          zone: `Strefa ${index + 2}` 
+        },
+        support_exercises: []
+      }
+    }));
+  }
+
+  /**
+   * Oblicza datę dla dnia treningowego
+   * @param {number} weekNum - Numer tygodnia
+   * @param {number} dayIndex - Indeks dnia
+   * @returns {string} - Data w formacie YYYY-MM-DD
+   */
+  _calculateDate(weekNum, dayIndex) {
+    const baseDate = new Date();
+    const dayOffset = (weekNum - 1) * 7 + dayIndex * 2; // Co drugi dzień
+    baseDate.setDate(baseDate.getDate() + dayOffset);
+    return baseDate.toISOString().split('T')[0];
+  }
+
+
+
+  // Nowa metoda do generowania planu przy użyciu OpenAI
+  // REMOVED: _generatePlanWithOpenAI - no longer needed, only Gemini is used
+
+  // REMOVED: _parseOpenAIResponse - no longer needed, only Gemini is used
+
+  // REMOVED: _createDefaultTrainingPlan - no longer needed, only Gemini is used
 
   // Placeholder for the new method to generate corrective exercises
   async _generateCorrectiveExercises(userData, correctiveKnowledge) {
@@ -1504,6 +1458,258 @@ Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON mu
 8.  Generuj tylko i wyłącznie obiekt JSON zgodny z podanym schematem.
 `;
     return prompt;
+  }
+
+  /**
+   * Generuje plan tygodniowy na podstawie kontekstu progresji użytkownika
+   * @param {Object} weeklyData - Dane dla generowania planu tygodniowego
+   * @returns {Object} Plan tygodniowy
+   */
+  async generateWeeklyTrainingPlan(weeklyData) {
+    // Sprawdź czy Gemini API jest skonfigurowane
+    if (!this.geminiApiKey) {
+      throw new AppError('Gemini API nie jest skonfigurowane. Skontaktuj się z administratorem.', 500);
+    }
+
+    // Konfiguracja retry
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 sekunda
+    
+    // Spróbuj wygenerować plan używając Gemini API z retry logic
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        this.log(`\n--- PRÓBA ${attempt}/${maxRetries} WYGENEROWANIA PLANU TYGODNIOWEGO PRZEZ GEMINI ---`);
+        
+        const prompt = this.prepareWeeklyPlanPrompt(weeklyData);
+        const requestUrl = `${this.geminiApiUrl}/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`;
+        
+        const requestBody = {
+          contents: [{
+            role: 'user',
+            parts: [{ text: prompt }]
+          }],
+          generationConfig: this.geminiGenerationConfig,
+          safetySettings: [
+            {
+              category: 'HARM_CATEGORY_HARASSMENT',
+              threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+            },
+            {
+              category: 'HARM_CATEGORY_HATE_SPEECH',
+              threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+            },
+            {
+              category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+              threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+            },
+            {
+              category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+              threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+            },
+          ],
+        };
+
+        const response = await this.axiosClient.post(requestUrl, requestBody, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 30000, // 30 sekund timeout
+        });
+
+        this.log('Otrzymano odpowiedź z Gemini API dla planu tygodniowego.');
+        return this.parseWeeklyPlanResponse(response, weeklyData);
+
+      } catch (geminiError) {
+        this.error(`\n⚠️ Błąd podczas próby ${attempt}/${maxRetries} generowania planu tygodniowego przez Gemini:`, {
+          message: geminiError.message,
+          status: geminiError.response?.status,
+          data: geminiError.response?.data,
+          stack: geminiError.stack
+        });
+        
+        // Sprawdź czy to błąd, który może się powieść przy ponownej próbie
+        const isRetryableError = this._isRetryableError(geminiError);
+        
+        if (attempt < maxRetries && isRetryableError) {
+          const delay = baseDelay * Math.pow(2, attempt - 1); // Eksponencjalny backoff
+          this.log(`Czekanie ${delay}ms przed kolejną próbą...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue; // Spróbuj ponownie
+        }
+        
+        // Jeśli to ostatnia próba lub błąd nie nadaje się do retry, rzuć błąd
+        throw new AppError(
+          `Nie udało się wygenerować planu tygodniowego po ${maxRetries} próbach. Spróbuj ponownie za kilka minut.`, 
+          geminiError.response?.status || 500
+        );
+      }
+    }
+  }
+
+  /**
+   * Przygotowuje prompt dla generowania planu tygodniowego
+   * @param {Object} weeklyData - Dane tygodniowe
+   * @returns {string} Prompt
+   */
+  prepareWeeklyPlanPrompt(weeklyData) {
+    const contextInfo = this.buildWeeklyContext(weeklyData);
+    
+    return `Wygeneruj plan treningowy na ${weeklyData.deliveryFrequency === 'biweekly' ? '2 tygodnie' : '1 tydzień'} dla biegacza na podstawie poniższych danych:
+
+${contextInfo}
+
+WAŻNE WYMAGANIA:
+1. To jest ${weeklyData.weekNumber} tydzień treningowy w ramach długoterminowej progresji
+2. Aktualnie znajdujemy się w fazie: ${weeklyData.currentPhase}
+3. Poprzednia realizacja planów: ${weeklyData.recentPerformance.averageCompletion * 100}%
+4. Trend wydajności: ${weeklyData.recentPerformance.trend}
+5. Rekomendacja progresji: ${weeklyData.recentPerformance.recommendation}
+
+DOSTOSOWANIA:
+- Jeśli realizacja była niska (<60%), zmniejsz intensywność i objętość
+- Jeśli realizacja była wysoka (>80%), można delikatnie zwiększyć wyzwanie
+- Uwzględnij fazę treningową: ${weeklyData.currentPhase}
+- Tempo progresji: ${((weeklyData.progressionRate - 1) * 100).toFixed(1)}% tygodniowo
+
+STRUKTURA ODPOWIEDZI (zwróć TYLKO JSON):
+{
+  "id": "unique_plan_id",
+  "metadata": {
+    "discipline": "bieganie",
+    "target_group": "adult_runners", 
+    "target_goal": "${weeklyData.goal}",
+    "level_hint": "${weeklyData.level}",
+    "days_per_week": "${weeklyData.daysPerWeek}",
+    "duration_weeks": ${weeklyData.deliveryFrequency === 'biweekly' ? 2 : 1},
+    "description": "Plan tygodniowy - tydzień ${weeklyData.weekNumber}",
+    "author": "RunFitting AI",
+    "phase": "${weeklyData.currentPhase}",
+    "week_number": ${weeklyData.weekNumber}
+  },
+  "plan_weeks": [
+    {
+      "week_num": ${weeklyData.weekNumber},
+      "focus": "Cel na ten tydzień w kontekście fazy ${weeklyData.currentPhase}",
+      "days": [
+        // ${weeklyData.daysPerWeek} dni treningowych z detalami
+      ]
+    }${weeklyData.deliveryFrequency === 'biweekly' ? `,
+    {
+      "week_num": ${weeklyData.weekNumber + 1},
+      "focus": "Cel na kolejny tydzień",
+      "days": [
+        // kolejne dni treningowe
+      ]
+    }` : ''}
+  ],
+  "corrective_exercises": {
+    "frequency": "daily",
+    "list": [
+      {
+        "name": "Plank (deska)",
+        "description": "Wzmacnia mięśnie głębokie brzucha i stabilizatory tułowia",
+        "sets": 3,
+        "duration": 30
+      },
+      {
+        "name": "Bird-dog",
+        "description": "Poprawia stabilizację i koordynację",
+        "sets": 3,
+        "reps": 10
+      }
+    ]
+  },
+  "notes": [
+    "Notatki dotyczące tego okresu treningowego",
+    "Wskazówki dotyczące monitorowania postępów",
+    "Zalecenia żywieniowe i regeneracyjne"
+  ]
+}
+
+WAŻNE: W sekcji corrective_exercises używaj TYLKO pól: "name", "description", "sets", "reps" (dla powtórzeń), "duration" (dla czasu w sekundach). NIE używaj pól takich jak "sets_reps" - są nieprawidłowe!
+
+Pamiętaj o dostosowaniu planu do:
+- Bieżącej formy użytkownika (${weeklyData.recentPerformance.trend})
+- Fazy treningowej (${weeklyData.currentPhase})
+- Długoterminowego celu: ${weeklyData.longTermGoal?.targetEvent || 'brak określonego'}
+- Poprzednich wyników realizacji planów`;
+  }
+
+  /**
+   * Buduje kontekst tygodniowy dla promptu
+   * @param {Object} weeklyData - Dane tygodniowe
+   * @returns {string} Kontekst
+   */
+  buildWeeklyContext(weeklyData) {
+    let context = `PROFIL BIEGACZA:
+- Imię: ${weeklyData.name}
+- Wiek: ${weeklyData.age} lat
+- Poziom: ${weeklyData.level}
+- Cel: ${weeklyData.goal}
+- Dni treningowe w tygodniu: ${weeklyData.daysPerWeek}
+- Aktualny tygodniowy dystans: ${weeklyData.weeklyDistance} km
+- Kontuzje: ${weeklyData.hasInjuries ? 'Tak' : 'Nie'}`;
+
+    if (weeklyData.heartRate) {
+      context += `\n- Tętno spoczynkowe: ${weeklyData.heartRate} bpm`;
+    }
+
+    if (weeklyData.description) {
+      context += `\n- Dodatkowe informacje: ${weeklyData.description}`;
+    }
+
+    context += `\n\nKONTEKST PROGRESJI:
+- Tydzień numer: ${weeklyData.weekNumber}
+- Łącznie dostarczonych tygodni: ${weeklyData.totalWeeksDelivered}
+- Aktualna faza: ${weeklyData.currentPhase}
+- Ostatni tygodniowy dystans: ${weeklyData.lastWeeklyDistance} km
+- Tempo progresji: ${weeklyData.progressionRate}`;
+
+    if (weeklyData.longTermGoal) {
+      context += `\n\nCEL DŁUGOTERMINOWY:
+- Wydarzenie: ${weeklyData.longTermGoal.targetEvent || 'Nie określono'}
+- Data: ${weeklyData.longTermGoal.targetDate || 'Nie określono'}
+- Docelowy czas: ${weeklyData.longTermGoal.targetTime || 'Nie określono'}`;
+    }
+
+    context += `\n\nWYDAJNOŚĆ Z OSTATNICH TYGODNI:
+- Średnia realizacja: ${(weeklyData.recentPerformance.averageCompletion * 100).toFixed(1)}%
+- Trend: ${weeklyData.recentPerformance.trend}
+- Rekomendacja: ${weeklyData.recentPerformance.recommendation}`;
+
+    return context;
+  }
+
+  /**
+   * Parsuje odpowiedź dla planu tygodniowego
+   * @param {Object} response - Odpowiedź z API
+   * @param {Object} weeklyData - Dane tygodniowe
+   * @returns {Object} Sparsowany plan
+   */
+  parseWeeklyPlanResponse(response, weeklyData) {
+    try {
+      // Parsuj odpowiedź z Gemini API
+      const planData = this._parseResponse(response.data);
+
+      // Dodaj metadane specyficzne dla planu tygodniowego
+      planData.planType = 'weekly';
+      planData.weekNumber = weeklyData.weekNumber;
+      planData.deliveryFrequency = weeklyData.deliveryFrequency;
+      planData.generatedFor = {
+        phase: weeklyData.currentPhase,
+        progressionRate: weeklyData.progressionRate,
+        recentPerformance: weeklyData.recentPerformance
+      };
+
+      // Dodaj unikalne ID planu
+      if (!planData.id) {
+        planData.id = `weekly_${weeklyData.weekNumber}_${Date.now()}`;
+      }
+
+      this.log(`Wygenerowano plan tygodniowy: tydzień ${weeklyData.weekNumber}, faza ${weeklyData.currentPhase}`);
+      return planData;
+    } catch (error) {
+      this.log('Błąd parsowania odpowiedzi planu tygodniowego: ' + error.message);
+      throw new AppError('Błąd przetwarzania wygenerowanego planu tygodniowego', 500);
+    }
   }
 }
 

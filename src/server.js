@@ -22,6 +22,7 @@ if (fs.existsSync(envPath)) {
 
 // Importujemy resztę aplikacji dopiero po wczytaniu zmiennych środowiskowych
 const app = require('./app');
+const weeklyPlanDeliveryJob = require('./jobs/weekly-plan-delivery.job');
 
 // Obsługa nieobsłużonych wyjątków
 process.on('uncaughtException', err => {
@@ -37,6 +38,10 @@ const port = process.env.PORT || 3000;
 const server = app.listen(port, () => {
   console.log(`Serwer uruchomiony na porcie ${port}`);
   console.log(`Dokumentacja API dostępna pod adresem: http://localhost:${port}/api-docs`);
+  
+  // Uruchomienie cron job dla dostarczania planów tygodniowych
+  weeklyPlanDeliveryJob.start();
+  console.log('Uruchomiono cron job dla dostarczania planów tygodniowych');
 });
 
 // Obsługa nieobsłużonych odrzuceń (rejection)

@@ -112,6 +112,30 @@ const trainingPlanSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  
+  // Nowe pola dla planów tygodniowych
+  planType: {
+    type: String,
+    enum: ['standard', 'weekly'],
+    default: 'standard'
+  },
+  
+  weekNumber: {
+    type: Number,
+    default: null
+  },
+  
+  deliveryFrequency: {
+    type: String,
+    enum: ['weekly', 'biweekly'],
+    default: null
+  },
+  
+  parentSchedule: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WeeklyPlanSchedule',
+    default: null
+  },
   progress: {
     completedWorkouts: {
       type: Number,

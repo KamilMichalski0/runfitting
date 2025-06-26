@@ -155,8 +155,9 @@ const trainingFormSubmissionSchema = new Schema({
 
   // --- Backend Fields ---
   userId: { type: String, required: true, index: true }, // Link to the user who submitted (Supabase uses UUIDs as strings)
-  status: { type: String, enum: ['nowy', 'w_trakcie_generowania', 'wygenerowany', 'blad'], default: 'nowy', index: true },
+  status: { type: String, enum: ['nowy', 'przetwarzany', 'w_trakcie_generowania', 'wygenerowany', 'błąd_harmonogramu', 'blad'], default: 'nowy', index: true },
   planId: { type: Schema.Types.ObjectId, ref: 'TrainingPlan' }, // Link to the generated plan
+  scheduleId: { type: Schema.Types.ObjectId, ref: 'WeeklyPlanSchedule' }, // Link to the weekly delivery schedule
 
 }, { timestamps: true }); // Adds createdAt and updatedAt automatically
 

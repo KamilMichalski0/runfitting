@@ -25,6 +25,7 @@ console.log('APP_DEBUG: Successfully required plan.routes.js');
 // --- END DEBUG LOG ---
 
 const runningFormRoutes = require('./routes/running-form.routes');
+const weeklyScheduleRoutes = require('./routes/weekly-schedule.routes');
 
 // Importowanie middleware obsługi błędów
 const globalErrorHandler = require('./middleware/error.middleware');
@@ -115,12 +116,23 @@ if (process.env.NODE_ENV === 'development') {
 app.use('/api/users', userRoutes);
 app.use('/api/plans', planRoutes);
 app.use('/api/running-forms', runningFormRoutes);
+app.use('/api/weekly-schedule', weeklyScheduleRoutes);
 
 // Testowy endpoint
 app.get('/', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'API RunFitting działa prawidłowo!'
+  });
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    service: 'RunFitting API',
+    version: '1.0.0'
   });
 });
 

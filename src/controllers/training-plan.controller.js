@@ -2,20 +2,19 @@ const mongoose = require('mongoose');
 const TrainingPlan = require('../models/training-plan.model');
 const TrainingFormSubmission = require('../models/running-form.model');
 const GeminiService = require('../services/gemini.service');
-const FallbackPlanGeneratorService = require('../services/fallback-plan-generator.service');
 const runningKnowledgeBase = require('../knowledge/running-knowledge-base');
+const correctiveExercisesKnowledgeBase = require('../knowledge/corrective-knowledge-base');
 const AppError = require('../utils/app-error');
-const PlanGeneratorService = require('../services/plan-generator.service');
-const { logError } = require('../utils/logger');
+// REMOVED: const PlanGeneratorService = require('../services/plan-generator.service'); // Już nie używany
+const { logError, logInfo } = require('../utils/logger');
 const TrainingPlanService = require('../services/trainingPlan.service');
-
-// Inicjalizacja serwisów
-const fallbackPlanGenerator = new FallbackPlanGeneratorService();
+const WeeklyPlanDeliveryService = require('../services/weekly-plan-delivery.service');
 
 class TrainingPlanController {
   constructor() {
-    this.planGeneratorService = new PlanGeneratorService();
-    this.geminiService = new GeminiService(runningKnowledgeBase);
+    // REMOVED: this.planGeneratorService = new PlanGeneratorService(); // Już nie używany
+    this.geminiService = new GeminiService(runningKnowledgeBase, correctiveExercisesKnowledgeBase);
+    this.weeklyPlanDeliveryService = new WeeklyPlanDeliveryService();
 
     // Bindowanie metod do instancji kontrolera
     this.generatePlan = this.generatePlan.bind(this);
@@ -139,17 +138,11 @@ class TrainingPlanController {
       // Generowanie planu
       let planData;
       try {
-        // Logowanie danych formularza przed wysłaniem do Gemini
-        console.log('Dane formularza przekazywane do geminiService:', JSON.stringify(runningForm.toObject(), null, 2));
-        // Próba wygenerowania planu za pomocą Gemini
+        // Wygenerowanie planu za pomocą ulepszonego Gemini Service (z wbudowanym fallbackiem)
         planData = await this.geminiService.generateTrainingPlan(runningForm.toObject());
       } catch (error) {
-        console.error('Błąd Gemini:', error);
-        // Logowanie danych formularza przed wysłaniem do generatora zapasowego
-        console.log('Dane formularza przekazywane do fallbackGenerator:', JSON.stringify(runningForm.toObject(), null, 2));
-        // Fallback - wygeneruj plan za pomocą wbudowanego generatora
-        const fallbackGenerator = new FallbackPlanGeneratorService();
-        planData = await fallbackGenerator.generateFallbackPlan(runningForm.toObject());
+        console.error('Błąd podczas generowania planu:', error);
+        throw new AppError('Nie udało się wygenerować planu treningowego. Spróbuj ponownie później.', 500);
       }
 
       // Logowanie danych planu PRZED utworzeniem instancji TrainingPlan
@@ -228,32 +221,106 @@ class TrainingPlanController {
       const formData = req.body;
       const userId = req.user.sub;
 
-      // Sprawdzenie, czy podstawowe wymagane pola są obecne (można dodać więcej walidacji)
+      // Sprawdzenie, czy podstawowe wymagane pola są obecne
       if (!formData.imieNazwisko || !formData.wiek || !formData.glownyCel) {
         return res.status(400).json({
           error: 'Brak podstawowych danych do zapisania formularza (imię, wiek, cel).'
         });
       }
 
-      // Zapisanie danych formularza w bazie przy użyciu nowego modelu
+      // Zapisanie danych formularza w bazie
       const newFormSubmission = new TrainingFormSubmission({
         ...formData,
         userId,
-        status: 'nowy' // Ustawienie początkowego statusu
+        status: 'przetwarzany' // Status wskazujący rozpoczęcie przetwarzania
       });
 
       await newFormSubmission.save();
+      logInfo(`Zapisano formularz biegowy dla użytkownika: ${userId}`);
 
-      res.status(201).json({
-        status: 'success',
-        data: {
-          formId: newFormSubmission._id,
-          message: 'Formularz zgłoszeniowy zapisany pomyślnie.' // Zaktualizowany komunikat
+      // === AUTOMATYCZNE URUCHOMIENIE SYSTEMU TYGODNIOWYCH DOSTAW ===
+      
+      try {
+        // 1. Przygotowanie danych profilu użytkownika na podstawie formularza
+        const userProfile = this.mapFormToUserProfile(formData);
+        
+        // 2. Konfiguracja harmonogramu dostarczania
+        const scheduleData = {
+          userProfile,
+          deliveryFrequency: formData.czestotliwoscDostaw || 'weekly', // domyślnie co tydzień
+          deliveryDay: formData.dzienDostawy || 'sunday', // domyślnie niedziela
+          deliveryTime: formData.godzinaDostawy || '18:00', // domyślnie 18:00
+          timezone: formData.strefaCzasowa || 'Europe/Warsaw',
+          longTermGoal: this.mapFormToLongTermGoal(formData)
+        };
+
+        // 3. Sprawdź czy użytkownik już ma aktywny harmonogram
+        let schedule;
+        try {
+          schedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
+          logInfo(`Użytkownik ${userId} ma już aktywny harmonogram - aktualizacja`);
+          
+          // Aktualizuj istniejący harmonogram
+          schedule = await this.weeklyPlanDeliveryService.updateSchedule(userId, scheduleData);
+        } catch (error) {
+          // Brak harmonogramu - utwórz nowy
+          logInfo(`Tworzenie nowego harmonogramu dla użytkownika: ${userId}`);
+          schedule = await this.weeklyPlanDeliveryService.createSchedule(userId, scheduleData);
         }
-      });
+
+        // 4. Wygeneruj pierwszy plan tygodniowy od razu
+        logInfo(`Generowanie pierwszego planu tygodniowego dla użytkownika: ${userId}`);
+        const firstWeeklyPlan = await this.weeklyPlanDeliveryService.generateWeeklyPlan(schedule);
+
+        // 5. Aktualizuj status formularza
+        newFormSubmission.status = 'wygenerowany';
+        newFormSubmission.planId = firstWeeklyPlan._id;
+        newFormSubmission.scheduleId = schedule._id;
+        await newFormSubmission.save();
+
+        logInfo(`Pomyślnie uruchomiono system tygodniowych dostaw dla użytkownika: ${userId}`);
+
+        res.status(201).json({
+          status: 'success',
+          data: {
+            formId: newFormSubmission._id,
+            scheduleId: schedule._id,
+            firstPlanId: firstWeeklyPlan._id,
+            message: 'Formularz zapisany i system dostaw planów uruchomiony pomyślnie!',
+            schedule: {
+              deliveryFrequency: schedule.deliveryFrequency,
+              deliveryDay: schedule.deliveryDay,
+              deliveryTime: schedule.deliveryTime,
+              nextDeliveryDate: schedule.nextDeliveryDate
+            },
+            firstPlan: {
+              weekNumber: firstWeeklyPlan.weekNumber,
+              planType: firstWeeklyPlan.planType,
+              metadata: firstWeeklyPlan.metadata
+            }
+          }
+        });
+
+      } catch (scheduleError) {
+        logError('Błąd podczas uruchamiania systemu tygodniowych dostaw', scheduleError);
+        
+        // Nawet jeśli harmonogram się nie udał, formularz został zapisany
+        newFormSubmission.status = 'błąd_harmonogramu';
+        await newFormSubmission.save();
+
+        res.status(201).json({
+          status: 'partial_success',
+          data: {
+            formId: newFormSubmission._id,
+            message: 'Formularz zapisany, ale wystąpił problem z uruchomieniem automatycznych dostaw planów.',
+            error: scheduleError.message
+          }
+        });
+      }
+
     } catch (error) {
       logError('Błąd zapisywania formularza zgłoszeniowego', error);
-      // Dodanie szczegółów błędu walidacji, jeśli wystąpił
+      
       if (error.name === 'ValidationError') {
         return res.status(400).json({
            error: 'Błąd walidacji danych formularza.',
@@ -305,13 +372,11 @@ class TrainingPlanController {
       // Generowanie planu
       let planData;
       try {
-        // Próba wygenerowania planu za pomocą Gemini
+        // Wygenerowanie planu za pomocą ulepszonego Gemini Service (z wbudowanym fallbackiem)
         planData = await this.geminiService.generateTrainingPlan(runningForm.toObject());
       } catch (error) {
-        console.error('Błąd Gemini:', error);
-        // Fallback - wygeneruj plan za pomocą wbudowanego generatora
-        const fallbackGenerator = new FallbackPlanGeneratorService();
-        planData = await fallbackGenerator.generateFallbackPlan(runningForm.toObject());
+        console.error('Błąd podczas generowania planu:', error);
+        throw new AppError('Nie udało się wygenerować planu treningowego. Spróbuj ponownie później.', 500);
       }
 
       // Tworzenie nowego planu treningowego
@@ -747,13 +812,11 @@ class TrainingPlanController {
       // Generowanie planu
       let planData;
       try {
-        // Próba wygenerowania planu za pomocą Gemini
+        // Wygenerowanie planu za pomocą ulepszonego Gemini Service (z wbudowanym fallbackiem)
         planData = await this.geminiService.generateTrainingPlan(runningForm.toObject());
       } catch (error) {
         console.error('Błąd Gemini:', error);
-        // Fallback - wygeneruj plan za pomocą wbudowanego generatora
-        const fallbackGenerator = new FallbackPlanGeneratorService();
-        planData = await fallbackGenerator.generateFallbackPlan(runningForm.toObject());
+        throw new AppError('Nie udało się wygenerować planu treningowego. Spróbuj ponownie później.', 500);
       }
 
       // Tworzenie unikalnego ID planu
@@ -843,13 +906,11 @@ class TrainingPlanController {
       // Generowanie planu
       let planData;
       try {
-        // Próba wygenerowania planu za pomocą Gemini
+        // Wygenerowanie planu za pomocą ulepszonego Gemini Service (z wbudowanym fallbackiem)
         planData = await this.geminiService.generateTrainingPlan(runningForm.toObject());
       } catch (error) {
         console.error('Błąd Gemini:', error);
-        // Fallback - wygeneruj plan za pomocą wbudowanego generatora
-        const fallbackGenerator = new FallbackPlanGeneratorService();
-        planData = await fallbackGenerator.generateFallbackPlan(runningForm.toObject());
+        throw new AppError('Nie udało się wygenerować planu treningowego. Spróbuj ponownie później.', 500);
       }
 
       // Tworzenie unikalnego ID planu
@@ -965,6 +1026,139 @@ class TrainingPlanController {
       logError('Błąd podczas modyfikacji tygodnia w planie', error);
       next(error); // Przekaż błąd do globalnego error handlera
     }
+  }
+
+  /**
+   * Mapuje dane z formularza na profil użytkownika dla harmonogramu
+   * @param {Object} formData - Dane z formularza biegowego
+   * @returns {Object} Profil użytkownika
+   */
+  mapFormToUserProfile(formData) {
+    return {
+      name: formData.imieNazwisko || formData.name || 'Biegacz',
+      age: formData.wiek || formData.age || 30,
+      level: this.mapExperienceLevel(formData.poziomZaawansowania || formData.level),
+      goal: formData.glownyCel || formData.goal || 'poprawa_kondycji',
+      daysPerWeek: formData.dniTreningowe?.length || formData.daysPerWeek || 3,
+      weeklyDistance: formData.aktualnyKilometrTygodniowy || formData.weeklyDistance || 20,
+      hasInjuries: formData.kontuzje || formData.hasInjuries || false,
+      restingHeartRate: formData.restingHr || formData.heartRate,
+      maxHeartRate: formData.maxHr,
+      vo2max: formData.vo2max,
+      targetDistance: formData.dystansDocelowy,
+      description: formData.opisCelu || formData.description || '',
+      trainingDays: formData.dniTreningowe || ['monday', 'wednesday', 'friday'],
+      preferredTrainingTime: formData.preferowanyCzasTreningu || 'rano',
+      availableTime: formData.czasTreningu || 60
+    };
+  }
+
+  /**
+   * Mapuje poziom zaawansowania na standardowy format
+   * @param {string} level - Poziom z formularza
+   * @returns {string} Standardowy format poziomu
+   */
+  mapExperienceLevel(level) {
+    const levelMap = {
+      'beginner': 'początkujący',
+      'intermediate': 'średnio-zaawansowany', 
+      'advanced': 'zaawansowany',
+      'początkujący': 'początkujący',
+      'średnio-zaawansowany': 'średnio-zaawansowany',
+      'zaawansowany': 'zaawansowany'
+    };
+    
+    return levelMap[level] || 'początkujący';
+  }
+
+  /**
+   * Mapuje dane z formularza na cel długoterminowy
+   * @param {Object} formData - Dane z formularza
+   * @returns {Object} Cel długoterminowy
+   */
+  mapFormToLongTermGoal(formData) {
+    const longTermGoal = {};
+    
+    // Mapowanie z dystansu docelowego na wydarzenie
+    if (formData.dystansDocelowy && formData.dystansDocelowy !== 'inny') {
+      longTermGoal.targetEvent = `Zawody ${formData.dystansDocelowy}`;
+    }
+    
+    if (formData.raceDate) {
+      longTermGoal.targetDate = new Date(formData.raceDate);
+    }
+    
+    // Mapowanie rekordów osobistych jako cele czasowe
+    if (formData.dystansDocelowy === '5km' && formData.rekord5km) {
+      longTermGoal.targetTime = this.mapPersonalRecordToTime(formData.rekord5km, '5km');
+    } else if (formData.dystansDocelowy === '10km' && formData.rekord10km) {
+      longTermGoal.targetTime = this.mapPersonalRecordToTime(formData.rekord10km, '10km');
+    } else if (formData.dystansDocelowy === 'polmaraton' && formData.rekordPolmaraton) {
+      longTermGoal.targetTime = this.mapPersonalRecordToTime(formData.rekordPolmaraton, 'polmaraton');
+    } else if (formData.dystansDocelowy === 'maraton' && formData.rekordMaraton) {
+      longTermGoal.targetTime = this.mapPersonalRecordToTime(formData.rekordMaraton, 'maraton');
+    }
+
+    // Oblicz pozostałe tygodnie do celu
+    if (longTermGoal.targetDate) {
+      const now = new Date();
+      const diffTime = longTermGoal.targetDate - now;
+      const diffWeeks = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 7));
+      longTermGoal.remainingWeeks = diffWeeks > 0 ? diffWeeks : 12; // domyślnie 12 tygodni
+    } else {
+      // Jeśli brak daty zawodów, ustaw domyślnie 12 tygodni
+      longTermGoal.remainingWeeks = 12;
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + (12 * 7));
+      longTermGoal.targetDate = targetDate;
+    }
+
+    return Object.keys(longTermGoal).length > 0 ? longTermGoal : null;
+  }
+
+  /**
+   * Mapuje rekord osobisty na cel czasowy
+   * @param {string} recordRange - Zakres rekordu
+   * @param {string} distance - Dystans
+   * @returns {string} Cel czasowy
+   */
+  mapPersonalRecordToTime(recordRange, distance) {
+    const recordMap = {
+      '5km': {
+        'ponizej_20min': '19:00',
+        '20_25min': '22:30',
+        '25_30min': '27:30',
+        '30_35min': '32:30',
+        '35_40min': '37:30',
+        'powyzej_40min': '38:00'
+      },
+      '10km': {
+        'ponizej_40min': '39:00',
+        '40_50min': '45:00',
+        '50_60min': '55:00',
+        '60_70min': '65:00',
+        '70_80min': '75:00',
+        'powyzej_80min': '78:00'
+      },
+      'polmaraton': {
+        'ponizej_1h30min': '1:28:00',
+        '1h30_1h45min': '1:37:30',
+        '1h45_2h00min': '1:52:30',
+        '2h00_2h15min': '2:07:30',
+        '2h15_2h30min': '2:22:30',
+        'powyzej_2h30min': '2:25:00'
+      },
+      'maraton': {
+        'ponizej_3h00min': '2:58:00',
+        '3h00_3h30min': '3:15:00',
+        '3h30_4h00min': '3:45:00',
+        '4h00_4h30min': '4:15:00',
+        '4h30_5h00min': '4:45:00',
+        'powyzej_5h00min': '4:50:00'
+      }
+    };
+
+    return recordMap[distance]?.[recordRange] || null;
   }
 }
 
