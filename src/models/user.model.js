@@ -183,6 +183,198 @@ const userSchema = new mongoose.Schema({
   totalCaloriesBurned: {
     type: Number,
     default: 0
+  },
+  // Preferencje powiadomień
+  notificationPreferences: {
+    // Kanały powiadomień
+    channels: {
+      email: {
+        enabled: {
+          type: Boolean,
+          default: true
+        },
+        verified: {
+          type: Boolean,
+          default: false
+        }
+      },
+      sms: {
+        enabled: {
+          type: Boolean,
+          default: false
+        },
+        verified: {
+          type: Boolean,
+          default: false
+        }
+      },
+      push: {
+        enabled: {
+          type: Boolean,
+          default: true
+        },
+        subscriptions: [{
+          endpoint: String,
+          keys: {
+            p256dh: String,
+            auth: String
+          },
+          deviceInfo: {
+            userAgent: String,
+            platform: String
+          },
+          createdAt: {
+            type: Date,
+            default: Date.now
+          }
+        }]
+      }
+    },
+    // Typy powiadomień
+    types: {
+      trainingReminders: {
+        enabled: {
+          type: Boolean,
+          default: true
+        },
+        channels: [{
+          type: String,
+          enum: ['email', 'sms', 'push'],
+          default: 'push'
+        }],
+        timing: {
+          beforeTraining: {
+            type: Number,
+            default: 60 // minuty przed treningiem
+          }
+        }
+      },
+      motivationalMessages: {
+        enabled: {
+          type: Boolean,
+          default: true
+        },
+        channels: [{
+          type: String,
+          enum: ['email', 'sms', 'push'],
+          default: 'push'
+        }],
+        frequency: {
+          type: String,
+          enum: ['daily', 'weekly', 'never'],
+          default: 'weekly'
+        }
+      },
+      progressReports: {
+        enabled: {
+          type: Boolean,
+          default: true
+        },
+        channels: [{
+          type: String,
+          enum: ['email', 'sms', 'push'],
+          default: 'email'
+        }],
+        frequency: {
+          type: String,
+          enum: ['weekly', 'monthly', 'never'],
+          default: 'weekly'
+        }
+      },
+      systemNotifications: {
+        enabled: {
+          type: Boolean,
+          default: true
+        },
+        channels: [{
+          type: String,
+          enum: ['email', 'sms', 'push'],
+          default: 'email'
+        }]
+      },
+      achievements: {
+        enabled: {
+          type: Boolean,
+          default: true
+        },
+        channels: [{
+          type: String,
+          enum: ['email', 'sms', 'push'],
+          default: 'push'
+        }]
+      }
+    },
+    // Czas preferowanych powiadomień
+    preferredTimes: {
+      morning: {
+        hour: {
+          type: Number,
+          min: 0,
+          max: 23,
+          default: 8
+        },
+        minute: {
+          type: Number,
+          min: 0,
+          max: 59,
+          default: 0
+        }
+      },
+      evening: {
+        hour: {
+          type: Number,
+          min: 0,
+          max: 23,
+          default: 18
+        },
+        minute: {
+          type: Number,
+          min: 0,
+          max: 59,
+          default: 0
+        }
+      }
+    },
+    // Strefa czasowa użytkownika
+    timezone: {
+      type: String,
+      default: 'Europe/Warsaw'
+    }
+  },
+  // Wyciszenia powiadomień (Do Not Disturb)
+  quietHours: {
+    enabled: {
+      type: Boolean,
+      default: false
+    },
+    start: {
+      hour: {
+        type: Number,
+        min: 0,
+        max: 23,
+        default: 22
+      },
+      minute: {
+        type: Number,
+        min: 0,
+        max: 59,
+        default: 0
+      }
+    },
+    end: {
+      hour: {
+        type: Number,
+        min: 0,
+        max: 23,
+        default: 7
+      },
+      minute: {
+        type: Number,
+        min: 0,
+        max: 59,
+        default: 0
+      }
+    }
   }
 }, {
   timestamps: true,

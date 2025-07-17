@@ -373,14 +373,31 @@ class WeeklyPlanDeliveryService {
       );
 
       if (planIndex !== -1) {
-        schedule.recentPlans[planIndex].wasCompleted = progressData.completed || false;
+        schedule.recentPlans[planIndex].wasCompleted = true;
         schedule.recentPlans[planIndex].completionRate = progressData.completionRate || 0;
+        schedule.recentPlans[planIndex].wasRated = true;
+        schedule.recentPlans[planIndex].ratingData = {
+          difficultyLevel: progressData.difficultyLevel,
+          injuries: progressData.injuries,
+          injuryDescription: progressData.injuryDescription,
+          feedback: progressData.feedback,
+          nextWeekPreference: progressData.nextWeekPreference
+        };
         
         await schedule.save();
         logInfo(`Zaktualizowano postęp tygodnia ${weekNumber} dla użytkownika ${userId}`);
+
+        // Natychmiast wygeneruj nowy plan po ocenie
+        const newPlan = await this.generateWeeklyPlan(schedule);
+        logInfo(`Wygenerowano nowy plan tygodniowy po ocenie dla użytkownika ${userId}`);
+
+        return {
+          schedule,
+          newPlan
+        };
       }
 
-      return schedule;
+      return { schedule };
     } catch (error) {
       logError('Błąd podczas aktualizacji postępu tygodniowego', error);
       throw error;

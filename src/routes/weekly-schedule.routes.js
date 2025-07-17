@@ -3,8 +3,8 @@ const router = express.Router();
 const WeeklyScheduleController = require('../controllers/weekly-schedule.controller');
 const authenticate = require('../middleware/supabaseAuth.middleware');
 
-// Inicjalizacja kontrolera
-const weeklyScheduleController = new WeeklyScheduleController();
+// Kontroler jest już eksportowany jako instancja
+const weeklyScheduleController = WeeklyScheduleController;
 
 /**
  * @swagger
@@ -71,5 +71,8 @@ router.post('/manual-delivery', weeklyScheduleController.manualDelivery);
  * Pobiera historię planów tygodniowych użytkownika
  */
 router.get('/history', weeklyScheduleController.getHistory);
+
+// Nowa trasa dla pobierania wszystkich planów
+router.get('/all-plans', weeklyScheduleController.getAllWeeklyPlans);
 
 module.exports = router; 

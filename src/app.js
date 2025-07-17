@@ -1,10 +1,8 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const swaggerUI = require('swagger-ui-express');
-const swaggerJsDoc = require('swagger-jsdoc');
 const dotenv = require('dotenv');
 const xss = require('xss-clean');
 const rateLimit = require('express-rate-limit');
@@ -18,19 +16,15 @@ const swaggerSpec = require('./config/swaggerConfig');
 // Import routes
 const userRoutes = require('./routes/user.routes');
 
-// --- DEBUG LOG in app.js BEFORE plan.routes ---
-console.log('APP_DEBUG: Attempting to require plan.routes.js...');
 const planRoutes = require('./routes/plan.routes');
-console.log('APP_DEBUG: Successfully required plan.routes.js');
-// --- END DEBUG LOG ---
 
 const runningFormRoutes = require('./routes/running-form.routes');
 const weeklyScheduleRoutes = require('./routes/weekly-schedule.routes');
+const notificationRoutes = require('./routes/notification.routes');
 
 // Importowanie middleware obsługi błędów
 const globalErrorHandler = require('./middleware/error.middleware');
 const AppError = require('./utils/app-error');
-const supabaseAuth = require('./middleware/supabaseAuth.middleware');
 
 // Import konfiguracji bazy danych
 const { connectDB } = require('./config/database');
@@ -117,6 +111,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/plans', planRoutes);
 app.use('/api/running-forms', runningFormRoutes);
 app.use('/api/weekly-schedule', weeklyScheduleRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Testowy endpoint
 app.get('/', (req, res) => {

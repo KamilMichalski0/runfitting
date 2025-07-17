@@ -179,7 +179,6 @@ router.get('/me/subscription-limits', supabaseAuth, userController.getSubscripti
  *       401:
  *         description: Brak uwierzytelnienia
  */
-router.get('/profile', userController.getProfile);
 
 /**
  * @swagger
@@ -269,30 +268,6 @@ router.get('/profile', userController.getProfile);
  *       401:
  *         description: Brak uwierzytelnienia
  */
-router.patch('/profile', validateProfileUpdate, userController.updateProfile);
 
-// --- (opcjonalnie) Endpoint listy użytkowników dla admina (do usunięcia lub refaktoryzacji) ---
-/**
- * @swagger
- * /api/users:
- *   get:
- *     summary: Pobieranie listy wszystkich użytkowników (tylko dla administratorów)
- *     tags: [Użytkownicy]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Lista wszystkich użytkowników
- *       401:
- *         description: Brak uwierzytelnienia
- *       403:
- *         description: Brak uprawnień
- */
-router.get('/', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Lista wszystkich użytkowników - tylko dla administratorów'
-  });
-});
 
 module.exports = router;

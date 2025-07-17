@@ -50,5 +50,11 @@ module.exports = {
   logInfo,
   logError,
   logWarning,
-  logDebug
+  logDebug,
+  // Aliasy dla kompatybilności z standardowymi loggerami
+  info: logInfo,
+  error: logError,
+  warn: logWarning,
+  warning: logWarning,
+  debug: logDebug
 }; 

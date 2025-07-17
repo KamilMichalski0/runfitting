@@ -159,9 +159,17 @@ export default {
       <button 
         @click="completeWeek"
         class="complete-btn"
-        :disabled="plan.status === 'completed'"
+        :disabled="plan.wasRated"
       >
-        {{ plan.status === 'completed' ? '✅ Ukończono' : 'Ukończ tydzień' }}
+        <template v-if="plan.wasRated">
+          ✅ Tydzień oceniony
+        </template>
+        <template v-else-if="plan.wasCompleted">
+          📝 Oceń tydzień
+        </template>
+        <template v-else>
+          Ukończ tydzień
+        </template>
       </button>
     </div>
   </div>
@@ -202,6 +210,16 @@ export default {
     
     remainingWeeks() {
       return this.schedule?.longTermGoal?.remainingWeeks || 0;
+    },
+    
+    canCompleteWeek() {
+      return !this.plan.wasRated;
+    },
+    
+    weekStatus() {
+      if (this.plan.wasRated) return 'rated';
+      if (this.plan.wasCompleted) return 'completed';
+      return 'in_progress';
     }
   },
 
@@ -228,8 +246,16 @@ export default {
     },
 
     completeWeek() {
-      // Przekieruj do oceny tygodnia
-      this.$router.push(`/weekly-progress/${this.plan._id}`);
+      if (this.plan.wasCompleted) {
+        // Jeśli plan jest ukończony ale nie oceniony, przekieruj do oceny
+        this.$router.push(`/weekly-progress/${this.plan._id}`);
+      } else {
+        // Jeśli plan nie jest ukończony, najpierw oznacz jako ukończony
+        this.$store.dispatch('weeklySchedule/markWeekCompleted', this.plan._id)
+          .then(() => {
+            this.$router.push(`/weekly-progress/${this.plan._id}`);
+          });
+      }
     }
   }
 };
@@ -482,25 +508,24 @@ export default {
       this.submitting = true;
       
       try {
-        await this.$api.post('/api/weekly-schedule/progress', {
+        const response = await this.$api.post('/api/weekly-schedule/progress', {
           weekId: this.weekId,
           weeklyData: this.progress
         });
 
-        this.$toast.success('🎉 Ocena zapisana! Następny plan zostanie dostosowany.');
-        
-        // Update store
-        this.$store.dispatch('weeklySchedule/completeWeek', {
-          weekId: this.weekId,
-          progressData: this.progress
-        });
-        
-        // Redirect to dashboard
-        this.$router.push('/dashboard');
-        
+        // Jeśli otrzymaliśmy nowy plan, zaktualizuj store
+        if (response.data.data.newPlan) {
+          await this.$store.dispatch('weeklySchedule/setCurrentPlan', response.data.data.newPlan);
+          this.$toast.success('Ocena zapisana i wygenerowano nowy plan!');
+        } else {
+          this.$toast.success('Ocena zapisana pomyślnie!');
+        }
+
+        // Przekieruj do dashboardu
+        this.$router.push('/weekly-dashboard');
       } catch (error) {
-        this.$toast.error('Błąd podczas zapisywania oceny');
-        console.error('Progress submission error:', error);
+        this.$toast.error('Wystąpił błąd podczas zapisywania oceny');
+        console.error('Błąd:', error);
       } finally {
         this.submitting = false;
       }
@@ -895,13 +920,17 @@ const actions = {
   },
 
   async generateManualPlan({ commit }) {
+    commit('SET_LOADING', true);
     try {
       const response = await weeklyScheduleApi.generateManualDelivery();
-      commit('SET_CURRENT_PLAN', response.data.plan);
-      return response;
+      const newPlan = response.data.data.plan;
+      await commit('SET_CURRENT_PLAN', newPlan);
+      this.$toast.success('Nowy plan został wygenerowany!');
     } catch (error) {
-      commit('SET_ERROR', error.message);
-      throw error;
+      commit('SET_ERROR', 'Nie udało się wygenerować nowego planu');
+      this.$toast.error('Wystąpił błąd podczas generowania planu');
+    } finally {
+      commit('SET_LOADING', false);
     }
   }
 };

@@ -162,6 +162,20 @@ const weeklyPlanScheduleSchema = new mongoose.Schema({
       min: 0,
       max: 1,
       default: 0
+    },
+    wasRated: {
+      type: Boolean,
+      default: false
+    },
+    ratingData: {
+      difficultyLevel: Number,
+      injuries: Boolean,
+      injuryDescription: String,
+      feedback: String,
+      nextWeekPreference: {
+        type: String,
+        enum: ['same', 'easier', 'harder', 'more_speed', 'more_endurance', 'more_recovery']
+      }
     }
   }],
   
