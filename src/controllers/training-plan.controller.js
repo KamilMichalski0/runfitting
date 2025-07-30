@@ -7,8 +7,10 @@ const correctiveExercisesKnowledgeBase = require('../knowledge/corrective-knowle
 const AppError = require('../utils/app-error');
 // REMOVED: const PlanGeneratorService = require('../services/plan-generator.service'); // Już nie używany
 const { logError, logInfo } = require('../utils/logger');
+const logger = require('../utils/logger');
 const TrainingPlanService = require('../services/trainingPlan.service');
 const WeeklyPlanDeliveryService = require('../services/weekly-plan-delivery.service');
+const aiJobService = require('../services/ai-job.service');
 
 class TrainingPlanController {
   constructor() {
@@ -33,6 +35,7 @@ class TrainingPlanController {
     // NOWE METODY DLA MODYFIKACJI
     this.modifyPlanDay = this.modifyPlanDay.bind(this);
     this.modifyPlanWeek = this.modifyPlanWeek.bind(this);
+    this.getJobStatus = this.getJobStatus.bind(this);
   }
 
   /**
@@ -79,8 +82,6 @@ class TrainingPlanController {
   async generatePlan(req, res, next) {
     try {
       const formData = req.body;
-      console.log('Otrzymane dane formularza:', formData);
-      
       const userId = req.user.sub;
 
       // Sprawdzenie wymaganych pól w obu formatach danych
@@ -91,12 +92,6 @@ class TrainingPlanController {
       const isNewFormat = formData.name !== undefined && 
                           formData.level !== undefined &&
                           formData.goal !== undefined;
-
-      console.log('Format danych:', { isLegacyFormat, isNewFormat });
-      console.log('Dni treningowe w tygodniu:', {
-        daysPerWeek: formData.daysPerWeek,
-        trainingDaysPerWeek: formData.trainingDaysPerWeek
-      });
 
       if (!isLegacyFormat && !isNewFormat) {
         return res.status(400).json({ 
@@ -122,57 +117,65 @@ class TrainingPlanController {
             ? { known: true, value: formData.heartRate } 
             : { known: false, value: 60 }
         };
-        console.log('Przetworzone dane:', processedFormData);
       }
 
       // Zapisanie danych formularza w bazie
       const runningForm = new TrainingFormSubmission({
         ...processedFormData,
         userId,
-        status: 'pending'
+        status: 'queued'
       });
       
-      console.log('Dane formularza przed zapisem:', runningForm);
       await runningForm.save();
 
-      // Generowanie planu
-      let planData;
-      try {
-        // Wygenerowanie planu za pomocą ulepszonego Gemini Service (z wbudowanym fallbackiem)
-        planData = await this.geminiService.generateTrainingPlan(runningForm.toObject());
-      } catch (error) {
-        console.error('Błąd podczas generowania planu:', error);
-        throw new AppError('Nie udało się wygenerować planu treningowego. Spróbuj ponownie później.', 500);
-      }
+      // Dodanie zadania do kolejki
+      const jobId = await aiJobService.queueTrainingPlanGeneration(runningForm._id, userId);
 
-      // Logowanie danych planu PRZED utworzeniem instancji TrainingPlan
-      console.log('Dane planu (planData) przed zapisem:', JSON.stringify(planData, null, 2));
-
-      // Tworzenie nowego planu treningowego
-      const trainingPlan = new TrainingPlan({
-        ...planData,
-        userId
-      });
-
-      await trainingPlan.save();
-      
-      // Aktualizacja formularza o ID wygenerowanego planu
-      runningForm.status = 'wygenerowany';
-      runningForm.planId = trainingPlan._id;
-      await runningForm.save();
-
-      res.status(201).json({
-        status: 'success',
+      // Natychmiastowa odpowiedź z ID zadania
+      res.status(202).json({
+        status: 'queued',
+        message: 'Plan treningowy jest generowany w tle',
         data: {
-          plan: trainingPlan,
           formId: runningForm._id,
-          planId: trainingPlan.id
+          jobId: jobId,
+          statusUrl: `/api/plans/status/${jobId}`
         }
       });
+
     } catch (error) {
-      logError('Błąd generowania planu treningowego', error);
+      logger.error('Błąd podczas dodawania zadania do kolejki', error);
       return res.status(500).json({ 
         error: 'Wystąpił błąd podczas generowania planu treningowego' 
+      });
+    }
+  }
+
+  /**
+   * Pobiera status zadania generowania planu
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @param {Function} next - Express next middleware
+   */
+  async getJobStatus(req, res, next) {
+    try {
+      const { jobId } = req.params;
+      const status = await aiJobService.getJobStatus(jobId);
+      
+      if (!status) {
+        return res.status(404).json({
+          error: 'Zadanie nie zostało znalezione'
+        });
+      }
+
+      res.status(200).json({
+        status: 'success',
+        data: status
+      });
+
+    } catch (error) {
+      logger.error('Błąd podczas pobierania statusu zadania', error);
+      return res.status(500).json({ 
+        error: 'Wystąpił błąd podczas pobierania statusu zadania' 
       });
     }
   }
@@ -581,7 +584,8 @@ class TrainingPlanController {
         throw new AppError('Nieprawidłowy format ID planu', 400);
       }
 
-      const plan = await TrainingPlan.findOneAndDelete({
+      // Znajdź plan przed usunięciem
+      const plan = await TrainingPlan.findOne({
         _id: planId,
         userId
       });
@@ -590,11 +594,22 @@ class TrainingPlanController {
         throw new AppError('Nie znaleziono planu treningowego', 404);
       }
 
-      res.status(204).json({
-        status: 'success',
-        data: null
+      // Usuń plan z bazy danych
+      await TrainingPlan.findOneAndDelete({
+        _id: planId,
+        userId
       });
+
+      // Jeśli to plan tygodniowy, wyczyść referencje z harmonogramu
+      if (plan.planType === 'weekly') {
+        await this._cleanupPlanFromSchedule(planId, userId);
+      }
+
+      logInfo(`Usunięto plan ${planId} dla użytkownika ${userId}`);
+
+      res.status(204).send();
     } catch (error) {
+      logError(`Błąd podczas usuwania planu ${req.params.planId}`, error);
       next(error);
     }
   }
@@ -1159,6 +1174,42 @@ class TrainingPlanController {
     };
 
     return recordMap[distance]?.[recordRange] || null;
+  }
+
+  /**
+   * Czyści referencje do planu z harmonogramu tygodniowego
+   * @param {string} planId - ID planu do usunięcia
+   * @param {string} userId - ID użytkownika
+   * @returns {Promise<void>}
+   */
+  async _cleanupPlanFromSchedule(planId, userId) {
+    try {
+      const WeeklyPlanSchedule = require('../models/weekly-plan-schedule.model');
+      
+      // Znajdź harmonogram użytkownika
+      const schedule = await WeeklyPlanSchedule.findOne({ userId });
+      
+      if (!schedule) {
+        logInfo(`Nie znaleziono harmonogramu dla użytkownika ${userId}`);
+        return;
+      }
+
+      // Usuń plan z recentPlans
+      const originalLength = schedule.recentPlans?.length || 0;
+      schedule.recentPlans = schedule.recentPlans?.filter(
+        planRef => planRef.planId?.toString() !== planId
+      ) || [];
+
+      const removedCount = originalLength - schedule.recentPlans.length;
+
+      if (removedCount > 0) {
+        await schedule.save();
+        logInfo(`Usunięto ${removedCount} referencji do planu ${planId} z harmonogramu użytkownika ${userId}`);
+      }
+    } catch (error) {
+      logError(`Błąd podczas czyszczenia referencji planu ${planId} z harmonogramu`, error);
+      // Nie rzucaj błędu - cleanup nie powinien blokować usuwania planu
+    }
   }
 }
 

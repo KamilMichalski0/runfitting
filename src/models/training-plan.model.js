@@ -99,10 +99,7 @@ const trainingPlanSchema = new mongoose.Schema({
       required: [true, 'Zasady monitorowania bólu są wymagane']
     }]
   },
-  notes: [{
-    type: String,
-    required: [true, 'Uwagi są wymagane']
-  }],
+  notes: [String],
   userId: {
     type: String,
     required: [true, 'Plan musi być przypisany do użytkownika'],

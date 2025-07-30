@@ -114,9 +114,18 @@ export default {
   <div class="weekly-plan">
     <div class="plan-header">
       <h1>Plan Treningowy - Tydzień {{ plan.weekNumber }}</h1>
-      <span class="phase-badge" :class="plan.metadata.trainingPhase">
-        {{ phaseLabels[plan.metadata.trainingPhase] }}
-      </span>
+      <div class="header-actions">
+        <span class="phase-badge" :class="plan.metadata.trainingPhase">
+          {{ phaseLabels[plan.metadata.trainingPhase] }}
+        </span>
+        <button 
+          @click="showDeleteModal = true" 
+          class="delete-btn"
+          :disabled="deleting"
+        >
+          🗑️ Usuń plan
+        </button>
+      </div>
     </div>
 
     <!-- Progress do celu -->
@@ -172,6 +181,33 @@ export default {
         </template>
       </button>
     </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div v-if="showDeleteModal" class="modal-overlay" @click="showDeleteModal = false">
+      <div class="modal-content" @click.stop>
+        <h3>🗑️ Usuń Plan Treningowy</h3>
+        <p>Czy na pewno chcesz usunąć ten plan treningowy?</p>
+        <p class="warning-text">
+          ⚠️ Ta akcja jest nieodwracalna. Wszystkie dane dotyczące tego planu zostaną utracone.
+        </p>
+        <div class="modal-actions">
+          <button 
+            @click="showDeleteModal = false" 
+            class="cancel-btn"
+            :disabled="deleting"
+          >
+            Anuluj
+          </button>
+          <button 
+            @click="deletePlan" 
+            class="confirm-delete-btn"
+            :disabled="deleting"
+          >
+            {{ deleting ? 'Usuwanie...' : 'Usuń plan' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -187,6 +223,8 @@ export default {
       plan: null,
       schedule: null,
       loading: true,
+      showDeleteModal: false,
+      deleting: false,
       dayNames: ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'],
       phaseLabels: {
         base: 'Baza',
@@ -256,6 +294,31 @@ export default {
             this.$router.push(`/weekly-progress/${this.plan._id}`);
           });
       }
+    },
+
+    async deletePlan() {
+      if (this.deleting) return;
+      
+      this.deleting = true;
+      
+      try {
+        await this.$api.delete(`/api/plans/${this.planId}`);
+        
+        // Usuń plan z store
+        this.$store.dispatch('weeklySchedule/removePlan', this.planId);
+        
+        this.$toast.success('Plan treningowy został usunięty');
+        
+        // Przekieruj do listy planów lub dashboardu
+        this.$router.push('/weekly-dashboard');
+        
+      } catch (error) {
+        console.error('Błąd podczas usuwania planu:', error);
+        this.$toast.error('Nie udało się usunąć planu treningowego');
+      } finally {
+        this.deleting = false;
+        this.showDeleteModal = false;
+      }
     }
   }
 };
@@ -275,11 +338,37 @@ export default {
   margin-bottom: 20px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .phase-badge {
   padding: 8px 16px;
   border-radius: 20px;
   color: white;
   font-weight: bold;
+}
+
+.delete-btn {
+  padding: 8px 16px;
+  background: #f44336;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.3s ease;
+}
+
+.delete-btn:hover {
+  background: #d32f2f;
+}
+
+.delete-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
 }
 
 .phase-badge.base { background: #4CAF50; }
@@ -369,9 +458,94 @@ export default {
   cursor: not-allowed;
 }
 
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+  margin: 0 0 16px 0;
+  color: #333;
+}
+
+.warning-text {
+  color: #f44336;
+  font-size: 14px;
+  margin: 12px 0;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.cancel-btn {
+  padding: 8px 16px;
+  background: #e0e0e0;
+  color: #333;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.cancel-btn:hover {
+  background: #d0d0d0;
+}
+
+.confirm-delete-btn {
+  padding: 8px 16px;
+  background: #f44336;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.confirm-delete-btn:hover {
+  background: #d32f2f;
+}
+
+.confirm-delete-btn:disabled,
+.cancel-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
 @media (max-width: 768px) {
   .training-days {
     grid-template-columns: 1fr;
+  }
+  
+  .header-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .modal-content {
+    width: 95%;
+    padding: 20px;
   }
 }
 </style>
@@ -724,6 +898,13 @@ export const weeklyScheduleApi = {
   async getWeeklyPlansHistory(limit = 10) {
     const response = await api.get(`/api/weekly-schedule/history?limit=${limit}`);
     return response.data;
+  },
+
+  // === DELETE OPERATIONS ===
+  
+  async deletePlan(planId) {
+    const response = await api.delete(`/api/plans/${planId}`);
+    return response.data;
   }
 };
 
@@ -832,6 +1013,16 @@ const mutations = {
   
   CLEAR_ERROR(state) {
     state.error = null;
+  },
+
+  REMOVE_PLAN_FROM_HISTORY(state, planId) {
+    state.weeklyPlansHistory = state.weeklyPlansHistory.filter(
+      plan => plan._id !== planId
+    );
+  },
+
+  CLEAR_CURRENT_PLAN(state) {
+    state.currentWeeklyPlan = null;
   }
 };
 
@@ -931,6 +1122,25 @@ const actions = {
       this.$toast.error('Wystąpił błąd podczas generowania planu');
     } finally {
       commit('SET_LOADING', false);
+    }
+  },
+
+  async deletePlan({ commit, state }, planId) {
+    try {
+      await weeklyScheduleApi.deletePlan(planId);
+      
+      // Usuń plan z historii
+      commit('REMOVE_PLAN_FROM_HISTORY', planId);
+      
+      // Jeśli usuwany plan to aktualny plan, wyczyść go
+      if (state.currentWeeklyPlan && state.currentWeeklyPlan._id === planId) {
+        commit('CLEAR_CURRENT_PLAN');
+      }
+      
+      return true;
+    } catch (error) {
+      commit('SET_ERROR', 'Nie udało się usunąć planu');
+      throw error;
     }
   }
 };
@@ -1062,6 +1272,13 @@ export default {
             <span class="completion">{{ plan.progressData?.completionRate || 0 }}%</span>
             <span class="date">{{ formatDate(plan.completedAt) }}</span>
           </div>
+          <button 
+            @click="deletePlanFromHistory(plan._id)"
+            class="delete-plan-btn"
+            title="Usuń plan"
+          >
+            🗑️
+          </button>
         </div>
       </div>
       
@@ -1163,7 +1380,8 @@ export default {
       'fetchSchedule',
       'pauseSchedule',
       'resumeSchedule', 
-      'generateManualPlan'
+      'generateManualPlan',
+      'deletePlan'
     ]),
 
     async pauseSchedule() {
@@ -1234,6 +1452,19 @@ export default {
         hour: '2-digit',
         minute: '2-digit'
       });
+    },
+
+    async deletePlanFromHistory(planId) {
+      if (!confirm('Czy na pewno chcesz usunąć ten plan z historii?')) {
+        return;
+      }
+
+      try {
+        await this.deletePlan(planId);
+        this.$toast.success('Plan został usunięty');
+      } catch (error) {
+        this.$toast.error('Nie udało się usunąć planu');
+      }
     }
   }
 };
@@ -1347,11 +1578,27 @@ export default {
   align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid #eee;
+  position: relative;
 }
 
 .plan-week {
   font-weight: bold;
   color: #4CAF50;
+}
+
+.delete-plan-btn {
+  background: none;
+  border: none;
+  color: #f44336;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.3s ease;
+  font-size: 16px;
+}
+
+.delete-plan-btn:hover {
+  background: #ffebee;
 }
 
 .action-buttons {
@@ -1389,13 +1636,13 @@ export default {
 ### ✅ **Faza 1 - KRYTYCZNE** (1-2 dni robocze)
 - [ ] Zmienić `RunningForm.vue` - nowa logika response
 - [ ] Dodać TypeScript interfaces dla API
-- [ ] Utworzyć `WeeklyPlanViewer.vue` 
+- [ ] Utworzyć `WeeklyPlanViewer.vue` z funkcją usuwania
 - [ ] Przetestować flow: formularz → pierwszy plan
 
 ### ✅ **Faza 2 - WAŻNE** (3-5 dni roboczych)
 - [ ] Utworzyć `WeeklyProgressForm.vue`
-- [ ] Dodać `weeklyScheduleApi.js` service
-- [ ] Zaimplementować store module
+- [ ] Dodać `weeklyScheduleApi.js` service z funkcją usuwania
+- [ ] Zaimplementować store module z akcją deletePlan
 - [ ] Dodać routing dla nowych komponentów
 
 ### ✅ **Faza 3 - NICE TO HAVE** (1-2 tygodnie)
@@ -1444,7 +1691,58 @@ curl -X POST "http://localhost:3000/api/weekly-schedule/progress" \
       "feedback": "Świetny tydzień!"
     }
   }'
+
+# Test usuwania planu
+curl -X DELETE "http://localhost:3000/api/plans/507f1f77bcf86cd799439011" \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
+
+### Test funkcji usuwania:
+```javascript
+// Test usuwania planu z WeeklyPlanViewer
+const deletePlan = async (planId) => {
+  try {
+    await api.delete(`/api/plans/${planId}`);
+    // Sprawdź czy plan został usunięty z UI
+    // Sprawdź czy nastąpiło przekierowanie
+    // Sprawdź czy pokazano toast z potwierdzeniem
+  } catch (error) {
+    // Sprawdź obsługę błędów
+  }
+};
+
+// Test usuwania planu z historii w WeeklyDashboard
+const deletePlanFromHistory = async (planId) => {
+  const confirmed = confirm('Czy na pewno chcesz usunąć ten plan z historii?');
+  if (confirmed) {
+    await store.dispatch('weeklySchedule/deletePlan', planId);
+    // Sprawdź czy plan został usunięty z listy
+  }
+};
+```
+
+---
+
+## 🗑️ FUNKCJONALNOŚĆ USUWANIA PLANÓW
+
+### Zaimplementowane funkcje:
+1. **Usuwanie planu z WeeklyPlanViewer** - przycisk w nagłówku z modalem potwierdzenia
+2. **Usuwanie planu z historii** - przycisk 🗑️ przy każdym planie w WeeklyDashboard
+3. **API endpoint** - `DELETE /api/plans/:planId` już zaimplementowany w backend
+4. **Store action** - `deletePlan` w module weeklySchedule
+5. **Bezpieczne usuwanie** - modał potwierdzenia z ostrzeżeniem
+
+### Bezpieczeństwo:
+- Confirmation modal z ostrzeżeniem o nieodwracalności
+- Sprawdzanie uprawnień użytkownika (middleware authorization)
+- Handling błędów z odpowiednimi komunikatami
+- Aktualizacja store po usunięciu
+
+### UX/UI:
+- Intuicyjne przyciski usuwania
+- Loading states podczas usuwania
+- Toast notifications z potwierdzeniem/błędem
+- Responsive design dla mobile
 
 ---
 

@@ -153,6 +153,14 @@ const weeklyPlanScheduleSchema = new mongoose.Schema({
       ref: 'TrainingPlan'
     },
     deliveryDate: Date,
+    globalPlanId: {
+      type: String,
+      index: true // Index for faster queries
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
     wasCompleted: {
       type: Boolean,
       default: false

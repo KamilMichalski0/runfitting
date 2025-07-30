@@ -1,7 +1,10 @@
 const express = require('express');
 const trainingPlanController = require('../controllers/training-plan.controller');
-const { planValidators, trainingDayValidators } = require('../validators/plan.validators');
+const { planValidators, trainingDayValidators, formValidators } = require('../validators/plan.validators');
 const supabaseAuth = require('../middleware/supabaseAuth.middleware');
+const { aiRateLimiter, jobStatusRateLimiter, backpressureMiddleware } = require('../middleware/ai-rate-limiter.middleware');
+const BeginnerRulesMiddleware = require('../middleware/beginner-rules.middleware');
+const ProgressiveFormMiddleware = require('../middleware/progressive-form.middleware');
 
 const router = express.Router();
 
@@ -126,7 +129,7 @@ router.use(supabaseAuth);
  */
 router.route('/')
   .get(trainingPlanController.getUserPlans)
-  .post(planValidators.createPlan, trainingPlanController.generatePlan);
+  .post(planValidators.createPlan, aiRateLimiter, backpressureMiddleware, trainingPlanController.generatePlan);
 
 /**
  * @swagger
@@ -427,7 +430,16 @@ router.route('/:planId/days/:dayId/miss')
  *       401:
  *         description: Brak uwierzytelnienia
  */
-router.post('/form', trainingPlanController.generatePlan);
+router.post('/form', 
+  formValidators.validateFormForPlanGeneration,
+  ProgressiveFormMiddleware.validateProgressiveForm,
+  BeginnerRulesMiddleware.validate48HourGap,
+  BeginnerRulesMiddleware.validateProgressionEligibility,
+  BeginnerRulesMiddleware.checkProgressionStatus,
+  aiRateLimiter, 
+  backpressureMiddleware, 
+  trainingPlanController.generatePlan
+);
 
 /**
  * @swagger
@@ -478,7 +490,7 @@ router.post('/form/save', trainingPlanController.saveRunningForm);
  *       404:
  *         description: Formularz nie został znaleziony
  */
-router.post('/form/:formId/generate', trainingPlanController.generatePlanFromSavedForm);
+router.post('/form/:formId/generate', aiRateLimiter, backpressureMiddleware, trainingPlanController.generatePlanFromSavedForm);
 
 /**
  * @swagger
@@ -505,7 +517,7 @@ router.post('/form/:formId/generate', trainingPlanController.generatePlanFromSav
  *       404:
  *         description: Formularz nie został znaleziony
  */
-router.post('/regenerate/:formId', trainingPlanController.regeneratePlanFromForm);
+router.post('/regenerate/:formId', aiRateLimiter, backpressureMiddleware, trainingPlanController.regeneratePlanFromForm);
 
 /**
  * @swagger
@@ -691,5 +703,597 @@ router.put(
   // TODO: Rozważyć dodanie walidatorów dla parametrów ścieżki i ciała żądania
   trainingPlanController.modifyPlanWeek
 );
+
+/**
+ * @swagger
+ * /api/plans/status/{jobId}:
+ *   get:
+ *     summary: Pobiera status zadania generowania planu treningowego
+ *     tags: [Plany Treningowe]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID zadania AI
+ *     responses:
+ *       200:
+ *         description: Status zadania
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     jobId:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                       enum: [pending, processing, completed, failed, cancelled]
+ *                     progress:
+ *                       type: number
+ *                       minimum: 0
+ *                       maximum: 100
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                     startedAt:
+ *                       type: string
+ *                       format: date-time
+ *                     completedAt:
+ *                       type: string
+ *                       format: date-time
+ *       401:
+ *         description: Brak uwierzytelnienia
+ *       404:
+ *         description: Zadanie nie zostało znalezione
+ */
+router.get('/status/:jobId', jobStatusRateLimiter, trainingPlanController.getJobStatus);
+
+/**
+ * @swagger
+ * /api/plans/validate-form:
+ *   post:
+ *     summary: Waliduje formularz treningowy bez generowania planu
+ *     tags: [Plany Treningowe]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/TrainingFormSubmission'
+ *     responses:
+ *       200:
+ *         description: Formularz jest poprawny
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     valid:
+ *                       type: boolean
+ *                     formContext:
+ *                       type: object
+ *                       description: Kontekst formularza na podstawie wybranego celu
+ *                     recommendations:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *       400:
+ *         description: Błędy walidacji
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: error
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 recommendations:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       401:
+ *         description: Brak uwierzytelnienia
+ */
+router.post('/validate-form', 
+  formValidators.validateFormForPlanGeneration,
+  ProgressiveFormMiddleware.validateProgressiveForm,
+  BeginnerRulesMiddleware.validate48HourGap,
+  BeginnerRulesMiddleware.validateProgressionEligibility,
+  BeginnerRulesMiddleware.checkProgressionStatus,
+  (req, res) => {
+    // Jeśli doszliśmy do tego punktu, walidacja przeszła pomyślnie
+    res.status(200).json({
+      status: 'success',
+      data: {
+        valid: true,
+        formContext: req.formContext || {},
+        beginnerProgression: req.beginnerProgression || null,
+        message: 'Formularz jest poprawny i gotowy do wygenerowania planu'
+      }
+    });
+  }
+);
+
+/**
+ * @swagger
+ * /api/plans/test-validation:
+ *   post:
+ *     summary: Uruchamia testy walidacji formularza (tylko development)
+ *     tags: [Plany Treningowe]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Wyniki testów walidacji
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: number
+ *                     passed:
+ *                       type: number
+ *                     failed:
+ *                       type: number
+ *                     errors:
+ *                       type: array
+ *       403:
+ *         description: Dostępne tylko w środowisku development
+ */
+router.post('/test-validation', (req, res) => {
+  // Tylko w środowisku development
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(403).json({
+      status: 'error',
+      message: 'Endpoint dostępny tylko w środowisku development'
+    });
+  }
+  
+  const FormValidationTester = require('../utils/form-validation-tester');
+  
+  FormValidationTester.runAllTests().then(results => {
+    res.status(200).json({
+      status: 'success',
+      data: results
+    });
+  }).catch(error => {
+    res.status(500).json({
+      status: 'error',
+      message: 'Błąd podczas wykonywania testów walidacji',
+      error: error.message
+    });
+  });
+});
+
+/**
+ * @swagger
+ * /api/plans/test-professional-structure:
+ *   post:
+ *     summary: Testuje profesjonalną strukturę treningową (tylko development)
+ *     tags: [Plany Treningowe]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               week:
+ *                 type: number
+ *                 default: 1
+ *                 description: Numer tygodnia do testowania
+ *               workoutNumber:
+ *                 type: number
+ *                 default: 1
+ *                 description: Numer treningu w tygodniu
+ *     responses:
+ *       200:
+ *         description: Wyniki testów profesjonalnej struktury
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     heartRateZones:
+ *                       type: object
+ *                     trainingComponents:
+ *                       type: object
+ *                     beginnerProgression:
+ *                       type: object
+ *                     exampleWorkout:
+ *                       type: object
+ *                     formattedDescription:
+ *                       type: string
+ *       403:
+ *         description: Dostępne tylko w środowisku development
+ */
+router.post('/test-professional-structure', (req, res) => {
+  // Tylko w środowisku development
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(403).json({
+      status: 'error',
+      message: 'Endpoint dostępny tylko w środowisku development'
+    });
+  }
+  
+  try {
+    const { 
+      HEART_RATE_ZONES, 
+      TRAINING_COMPONENTS, 
+      BEGINNER_PROGRESSION_PATTERN,
+      generateDetailedWorkout,
+      formatWorkoutDescription 
+    } = require('../templates/professional-training-structure');
+    
+    const { week = 1, workoutNumber = 1 } = req.body;
+    
+    // Wygeneruj przykładowy trening
+    const exampleWorkout = generateDetailedWorkout(week, workoutNumber, 'beginner');
+    const formattedDescription = formatWorkoutDescription(exampleWorkout);
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        heartRateZones: HEART_RATE_ZONES,
+        trainingComponents: TRAINING_COMPONENTS,
+        beginnerProgression: BEGINNER_PROGRESSION_PATTERN,
+        exampleWorkout,
+        formattedDescription,
+        testParameters: {
+          week,
+          workoutNumber,
+          userLevel: 'beginner'
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'Błąd podczas testowania profesjonalnej struktury',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/plans/test-monotony:
+ *   post:
+ *     summary: Testuje czy wygenerowane plany są różnorodne (tylko development)
+ *     tags: [Plany Treningowe]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               iterations:
+ *                 type: number
+ *                 default: 3
+ *                 description: Liczba planów do wygenerowania i porównania
+ *               userData:
+ *                 type: object
+ *                 description: Dane użytkownika do testowania
+ *     responses:
+ *       200:
+ *         description: Analiza różnorodności planów
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     diversityScore:
+ *                       type: number
+ *                     analysis:
+ *                       type: array
+ *                     recommendations:
+ *                       type: array
+ *       403:
+ *         description: Dostępne tylko w środowisku development
+ */
+router.post('/test-monotony', (req, res) => {
+  // Tylko w środowisku development
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(403).json({
+      status: 'error',
+      message: 'Endpoint dostępny tylko w środowisku development'
+    });
+  }
+  
+  const { iterations = 3, userData } = req.body;
+  
+  // Domyślne dane testowe jeśli nie podano
+  const testUserData = userData || {
+    imieNazwisko: 'Test User',
+    wiek: 30,
+    poziomZaawansowania: 'poczatkujacy',
+    glownyCel: 'zaczac_biegac',
+    dniTreningowe: ['poniedziałek', 'środa', 'piątek'],
+    czasTreningu: 30
+  };
+  
+  try {
+    // Funkcja do analizy różnorodności w tygodniu
+    const analyzeWeekDiversity = (week) => {
+      const workouts = week.days || [];
+      const structures = workouts.map(day => {
+        const details = day.details || [];
+        const mainWorkout = details.find(d => d.type === 'Bieg/Marsz') || {};
+        return {
+          day: day.day_of_week,
+          description: mainWorkout.description || '',
+          duration: mainWorkout.duration_minutes || 0,
+          structure: mainWorkout.description ? mainWorkout.description.match(/\\d+x|\\d+ min/g) : []
+        };
+      });
+      
+      // Sprawdź podobieństwo
+      const similarities = [];
+      for (let i = 0; i < structures.length; i++) {
+        for (let j = i + 1; j < structures.length; j++) {
+          const sim1 = structures[i];
+          const sim2 = structures[j];
+          
+          let similarity = 0;
+          if (sim1.duration === sim2.duration) similarity += 0.3;
+          if (sim1.description === sim2.description) similarity += 0.5;
+          if (JSON.stringify(sim1.structure) === JSON.stringify(sim2.structure)) similarity += 0.4;
+          
+          if (similarity > 0.6) {
+            similarities.push({
+              days: [sim1.day, sim2.day],
+              similarity: similarity,
+              reason: similarity > 0.8 ? 'Identyczne' : 'Bardzo podobne'
+            });
+          }
+        }
+      }
+      
+      return {
+        structures,
+        similarities,
+        diversityScore: 1 - (similarities.length / (structures.length * (structures.length - 1) / 2))
+      };
+    };
+    
+    // Symulacja generowania planów (ponieważ nie mamy pełnej integracji tutaj)
+    const mockPlans = [];
+    for (let i = 0; i < iterations; i++) {
+      mockPlans.push({
+        iteration: i + 1,
+        plan_weeks: [{
+          week_num: 1,
+          days: [
+            {
+              day_of_week: 'poniedziałek',
+              details: [{ type: 'Bieg/Marsz', duration_minutes: 25, description: '5x (2 min bieg/3 min marsz)' }]
+            },
+            {
+              day_of_week: 'środa', 
+              details: [{ type: 'Bieg/Marsz', duration_minutes: 25, description: '5x (2 min bieg/3 min marsz)' }]
+            },
+            {
+              day_of_week: 'piątek',
+              details: [{ type: 'Bieg/Marsz', duration_minutes: 25, description: '5x (2 min bieg/3 min marsz)' }]
+            }
+          ]
+        }]
+      });
+    }
+    
+    // Analiza różnorodności
+    const analyses = mockPlans.map(plan => {
+      const weekAnalysis = analyzeWeekDiversity(plan.plan_weeks[0]);
+      return {
+        iteration: plan.iteration,
+        ...weekAnalysis
+      };
+    });
+    
+    const overallDiversityScore = analyses.reduce((sum, a) => sum + a.diversityScore, 0) / analyses.length;
+    
+    const recommendations = [];
+    if (overallDiversityScore < 0.5) {
+      recommendations.push('KRYTYCZNE: Plany są bardzo monotonne - należy wzmocnić instrukcje różnorodności');
+    }
+    if (overallDiversityScore < 0.7) {
+      recommendations.push('Plany wykazują pewną monotonię - rozważ dodanie bardziej szczegółowych wzorców');
+    }
+    if (overallDiversityScore > 0.8) {
+      recommendations.push('Dobra różnorodność planów - kontynuuj obecne podejście');
+    }
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        diversityScore: Math.round(overallDiversityScore * 100) / 100,
+        analysis: analyses,
+        recommendations,
+        testNote: 'To jest mockowa analiza - dla pełnej analizy potrzebna jest integracja z Gemini Service'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'Błąd podczas testowania monotoniczności',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/plans/test-randomization:
+ *   post:
+ *     summary: Testuje system randomizacji planów (tylko development)
+ *     tags: [Plany Treningowe]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               userData:
+ *                 type: object
+ *                 description: Dane użytkownika do testowania
+ *               iterations:
+ *                 type: number
+ *                 default: 5
+ *                 description: Liczba iteracji testowania
+ *     responses:
+ *       200:
+ *         description: Wyniki testów randomizacji
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     iterations:
+ *                       type: number
+ *                     results:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     variantStats:
+ *                       type: object
+ *                     diversityScore:
+ *                       type: number
+ *       403:
+ *         description: Dostępne tylko w środowisku development
+ */
+router.post('/test-randomization', (req, res) => {
+  // Tylko w środowisku development
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(403).json({
+      status: 'error',
+      message: 'Endpoint dostępny tylko w środowisku development'
+    });
+  }
+  
+  const { selectRandomizedPlanTemplate, getVariantStats } = require('../templates/plan-template-selector');
+  const { userData, iterations = 5 } = req.body;
+  
+  // Domyślne dane testowe jeśli nie podano
+  const testUserData = userData || {
+    imieNazwisko: 'Jan Kowalski',
+    wiek: 30,
+    experienceLevel: 'intermediate',
+    mainGoal: 'run_5k',
+    daysPerWeek: 4,
+    glownyCel: 'przebiegniecie_dystansu',
+    poziomZaawansowania: 'sredniozaawansowany',
+    dystansDocelowy: '5km',
+    dniTreningowe: ['poniedziałek', 'środa', 'piątek', 'sobota']
+  };
+  
+  const results = [];
+  const variantCounts = {};
+  
+  try {
+    // Testuj randomizację wielokrotnie
+    for (let i = 0; i < iterations; i++) {
+      const plan = selectRandomizedPlanTemplate(testUserData);
+      
+      const result = {
+        iteration: i + 1,
+        planId: plan?.id || 'unknown',
+        variantId: plan?.variantId || 'none',
+        variantFocus: plan?.variantFocus || 'none',
+        variantDescription: plan?.variantDescription || 'none',
+        planDescription: plan?.metadata?.description || 'none'
+      };
+      
+      results.push(result);
+      
+      // Zlicz warianty
+      const variantKey = result.variantId || 'none';
+      variantCounts[variantKey] = (variantCounts[variantKey] || 0) + 1;
+    }
+    
+    // Oblicz wskaźnik różnorodności
+    const uniqueVariants = Object.keys(variantCounts).length;
+    const diversityScore = uniqueVariants / iterations;
+    
+    // Pobierz statystyki systemu
+    const systemStats = getVariantStats();
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        iterations,
+        results,
+        variantCounts,
+        diversityScore: Math.round(diversityScore * 100) / 100,
+        systemStats,
+        analysis: {
+          uniqueVariantsGenerated: uniqueVariants,
+          mostCommonVariant: Object.entries(variantCounts).reduce((a, b) => variantCounts[a[0]] > variantCounts[b[0]] ? a : b),
+          diversityAnalysis: diversityScore > 0.7 ? 'Wysoka różnorodność' : diversityScore > 0.4 ? 'Średnia różnorodność' : 'Niska różnorodność'
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'Błąd podczas testowania randomizacji',
+      error: error.message
+    });
+  }
+});
 
 module.exports = router; 

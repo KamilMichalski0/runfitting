@@ -86,23 +86,72 @@ const formValidators = {
     // Walidacja warunkowa dla innyCelOpis
     body('innyCelOpis').if(body('glownyCel').equals('inny_cel')).trim().notEmpty().withMessage('Opis innego celu jest wymagany, gdy wybrano "inny_cel".'),
 
-    // SEKCJA 2B: Kluczowe dla planu biegowego (jeśli cel to przebiegnięcie dystansu)
-    // Używamy `optional`, bo nie wiemy na pewno, czy cel to bieganie, kontroler musi to obsłużyć
-    body('poziomZaawansowania').optional().isIn(['poczatkujacy', 'sredniozaawansowany', 'zaawansowany']).withMessage('Nieprawidłowy poziom zaawansowania.'),
-    body('dystansDocelowy').optional().isIn(['5km', '10km', 'polmaraton', 'maraton', 'inny']).withMessage('Nieprawidłowy dystans docelowy.'),
-    body('aktualnyKilometrTygodniowy').optional({ checkFalsy: true }).isFloat({ min: 0 }).withMessage('Aktualny kilometraż musi być liczbą nieujemną.'),
-    // Dodajemy warunkową walidację dla pól rekordu, jeśli poziom nie jest początkujący
-    body('rekord5km').optional({ checkFalsy: true }).isIn(['ponizej_20min', '20_25min', '25_30min', '30_35min', '35_40min', 'powyzej_40min', '']).withMessage('Nieprawidłowa wartość rekordu 5km.'),
-    //... (podobne dla 10km, półmaratonu, maratonu - można dodać dla pełności)
+    // SEKCJA 2B: Kluczowe dla planu biegowego - WALIDACJA WARUNKOWA
+    // Dla celów biegowych te pola są WYMAGANE
+    body('poziomZaawansowania')
+      .if(body('glownyCel').isIn(['przebiegniecie_dystansu', 'zaczac_biegac']))
+      .notEmpty().withMessage('Poziom zaawansowania jest wymagany dla celów biegowych')
+      .isIn(['poczatkujacy', 'sredniozaawansowany', 'zaawansowany']).withMessage('Nieprawidłowy poziom zaawansowania.'),
+    
+    body('dystansDocelowy')
+      .if(body('glownyCel').equals('przebiegniecie_dystansu'))
+      .notEmpty().withMessage('Dystans docelowy jest wymagany dla celu przebiegnięcia dystansu')
+      .isIn(['5km', '10km', 'polmaraton', 'maraton', 'inny']).withMessage('Nieprawidłowy dystans docelowy.'),
+    // SEKCJA 2B cd: Walidacja warunkowa dla różnych celów biegowych
+    body('aktualnyKilometrTygodniowy')
+      .if(body('glownyCel').isIn(['przebiegniecie_dystansu', 'poprawa_kondycji']))
+      .optional({ checkFalsy: true }).isFloat({ min: 0 }).withMessage('Aktualny kilometraż musi być liczbą nieujemną.'),
+    
+    // Rekordy wymagane dla celów wydajnościowych
+    body('rekord5km')
+      .if(body('dystansDocelowy').equals('5km'))
+      .optional({ checkFalsy: true }).isIn(['ponizej_20min', '20_25min', '25_30min', '30_35min', '35_40min', 'powyzej_40min', '']).withMessage('Nieprawidłowa wartość rekordu 5km.'),
+    
+    body('rekord10km')
+      .if(body('dystansDocelowy').equals('10km'))
+      .optional({ checkFalsy: true }).isIn(['ponizej_40min', '40_50min', '50_60min', '60_70min', '70_80min', 'powyzej_80min', '']).withMessage('Nieprawidłowa wartość rekordu 10km.'),
+    
+    body('rekordPolmaraton')
+      .if(body('dystansDocelowy').equals('polmaraton'))
+      .optional({ checkFalsy: true }).isIn(['ponizej_90min', '90_120min', '120_150min', '150_180min', '180_210min', 'powyzej_210min', '']).withMessage('Nieprawidłowa wartość rekordu półmaratonu.'),
+    
+    body('rekordMaraton')
+      .if(body('dystansDocelowy').equals('maraton'))
+      .optional({ checkFalsy: true }).isIn(['ponizej_3h', '3_4h', '4_5h', '5_6h', 'powyzej_6h', '']).withMessage('Nieprawidłowa wartość rekordu maratonu.'),
+    
+    // SEKCJA 2A: Walidacja warunkowa dla redukcji masy ciała
+    body('aktualnaAktywnoscFizyczna')
+      .if(body('glownyCel').equals('redukcja_masy_ciala'))
+      .notEmpty().withMessage('Aktualna aktywność fizyczna jest wymagana dla celu redukcji masy ciała')
+      .isIn(['brak', 'minimalna', 'umiarkowana', 'wysoka']).withMessage('Nieprawidłowa wartość aktualnej aktywności fizycznej.'),
+    
+    body('docelowaWaga')
+      .if(body('glownyCel').equals('redukcja_masy_ciala'))
+      .optional({ checkFalsy: true }).isFloat({ min: 30, max: 200 }).withMessage('Docelowa waga musi być liczbą między 30 a 200 kg.'),
 
     // SEKCJA 6: Styl życia (wymagane)
     body('godzinySnuOd').matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Nieprawidłowy format godziny snu (od). Oczekiwano HH:MM.'),
     body('godzinySnuDo').matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Nieprawidłowy format godziny snu (do). Oczekiwano HH:MM.'),
     body('chronotyp').isIn(['ranny_ptaszek', 'nocny_marek', 'posredni']).withMessage('Nieprawidłowa wartość chronotypu.'),
     body('preferowanyCzasTreningu').isIn(['rano', 'poludnie', 'wieczor', 'dowolnie']).withMessage('Nieprawidłowa wartość preferowanego czasu treningu.'),
-    body('dniTreningowe').isArray({ min: 1 }).withMessage('Należy wybrać co najmniej jeden dzień treningowy.'),
+    body('dniTreningowe').isArray({ min: 1 }).withMessage('Należy wybrać co najmniej jeden dzień treningowy.')
+      .custom((value, { req }) => {
+        // Dla początkujących maksymalnie 2 dni treningowe (pierwsze 8 tygodni)
+        if (req.body.poziomZaawansowania === 'poczatkujacy' && value.length > 2) {
+          throw new Error('Dla początkujących maksymalnie 2 dni treningowe w tygodniu przez pierwsze 8 tygodni');
+        }
+        return true;
+      }),
     body('dniTreningowe.*').isIn(['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela']).withMessage('Nieprawidłowa nazwa dnia treningowego.'),
-    body('czasTreningu').optional({ checkFalsy: true }).isInt({ min: 15, max: 180 }).withMessage('Preferowany czas treningu musi być liczbą między 15 a 180 minut.'), // Zakładam min 15 min
+    // Walidacja czasu treningu z uwzględnieniem poziomu zaawansowania
+    body('czasTreningu').optional({ checkFalsy: true }).isInt({ min: 15, max: 180 }).withMessage('Preferowany czas treningu musi być liczbą między 15 a 180 minut.')
+      .custom((value, { req }) => {
+        // Dla początkujących maksymalnie 45 minut
+        if (req.body.poziomZaawansowania === 'poczatkujacy' && value > 45) {
+          throw new Error('Dla początkujących maksymalny czas treningu to 45 minut');
+        }
+        return true;
+      }),
 
     // SEKCJA 8: Zgody (wymagane)
     body('zgodaPrawdziwosc').isBoolean().toBoolean().equals(true).withMessage('Zgoda na prawdziwość danych jest wymagana.'),

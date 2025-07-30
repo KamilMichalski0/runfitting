@@ -75,4 +75,16 @@ router.get('/history', weeklyScheduleController.getHistory);
 // Nowa trasa dla pobierania wszystkich planów
 router.get('/all-plans', weeklyScheduleController.getAllWeeklyPlans);
 
+/**
+ * POST /api/weekly-schedule/new-plan
+ * Generuje nowy plan tygodniowy (zaczynając od tygodnia 1)
+ */
+router.post('/new-plan', weeklyScheduleController.generateNewPlan);
+
+/**
+ * DELETE /api/weekly-schedule/delete-all
+ * Usuwa wszystkie plany tygodniowe użytkownika (bulk delete)
+ */
+router.delete('/delete-all', weeklyScheduleController.deleteAllPlans);
+
 module.exports = router; 

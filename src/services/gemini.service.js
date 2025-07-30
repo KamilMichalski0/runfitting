@@ -4,8 +4,16 @@ const openaiConfig = require('../config/openai.config');
 const { OpenAI } = require('openai'); 
 const AppError = require('../utils/app-error');
 const config = require('../config/gemini.config');
-const { getExamplePlanTemplate } = require('../templates/plan-template-selector');
+const { getExamplePlanTemplate, selectRandomizedPlanTemplate } = require('../templates/plan-template-selector');
 const correctiveExercisesKnowledgeBase = require('../knowledge/corrective-knowledge-base'); // Corrected path
+const { 
+  HEART_RATE_ZONES, 
+  TRAINING_COMPONENTS, 
+  BEGINNER_PROGRESSION_PATTERN,
+  generateDetailedWorkout,
+  formatWorkoutDescription 
+} = require('../templates/professional-training-structure');
+const { checkWeekDiversity, isMonotonous } = require('../utils/plan-diversity-checker');
 
 class GeminiService {
   constructor(knowledgeBase, correctiveExercisesKnowledgeBase) {
@@ -76,11 +84,7 @@ class GeminiService {
   }
 
   async generateTrainingPlan(userData) {
-    // Logowanie otrzymanych danych użytkownika na początku metody
-    console.log('GeminiService otrzymał dane użytkownika:', JSON.stringify(userData, null, 2));
-
-    this.log('\n=== ROZPOCZĘCIE GENEROWANIA PLANU TRENINGOWEGO ===');
-    this.log('1. Dane wejściowe użytkownika:', userData);
+    this.log('Rozpoczęcie generowania planu treningowego dla użytkownika:', userData.userId);
 
     // Sprawdź czy Gemini API jest skonfigurowane
     if (!this.geminiApiKey) {
@@ -94,21 +98,8 @@ class GeminiService {
     // Spróbuj wygenerować plan używając Gemini API z retry logic
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        this.log(`\n--- PRÓBA ${attempt}/${maxRetries} WYGENEROWANIA PLANU PRZEZ GEMINI ---`);
-        this.log('\n2. Tworzenie promptu dla Gemini...');
         const prompt = this._createPrompt(userData);
-        
-        // Logowanie promptu
-        this.log('Wygenerowany prompt:');
-        this.log('----------------------------------------');
-        this.log(prompt);
-        this.log('----------------------------------------');
-
         const requestUrl = `${this.geminiApiUrl}/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`;
-
-        this.log('\n3. Konfiguracja żądania do Gemini API:');
-        this.log(`- Model: ${this.geminiModel}`);
-        this.log(`- URL: ${requestUrl}`);
 
         const requestBody = {
           contents: [
@@ -142,25 +133,13 @@ class GeminiService {
           ],
         };
 
-        this.log('\n4. Konfiguracja generowania Gemini:');
-        this.log(`- Temperature: ${this.geminiGenerationConfig.temperature}`);
-        this.log(`- TopK: ${this.geminiGenerationConfig.topK}`);
-        this.log(`- TopP: ${this.geminiGenerationConfig.topP}`);
-        this.log(`- MaxTokens: ${this.geminiGenerationConfig.maxOutputTokens}`);
-
-        this.log('\n5. Wysyłanie żądania do Gemini API...');
-
         const response = await this.axiosClient.post(requestUrl, requestBody, {
           headers: { 'Content-Type': 'application/json' },
           timeout: 30000, // 30 sekund timeout
         });
 
-        this.log('\n6. Otrzymano odpowiedź z Gemini API.');
-        this.log('\n7. Parsowanie odpowiedzi Gemini...');
         const trainingPlan = this._parseResponse(response.data); 
-
-        this.log('\n8. Zwalidowano i sparsowano plan treningowy z Gemini.');
-        this.log('\n=== ZAKOŃCZONO GENEROWANIE PLANU (GEMINI) ===');
+        this.log('Plan treningowy wygenerowany pomyślnie przez Gemini');
         return trainingPlan;
 
       } catch (geminiError) {
@@ -211,8 +190,18 @@ class GeminiService {
       return true;
     }
     
+    // Monotonny plan (422) - wymagane ponowne generowanie
+    if (error.response && error.response.status === 422) {
+      return true;
+    }
+    
     // Timeout błędy
     if (error.message && error.message.includes('timeout')) {
+      return true;
+    }
+    
+    // Błąd monotonii w wiadomości
+    if (error.message && error.message.includes('monotonous')) {
       return true;
     }
     
@@ -220,10 +209,6 @@ class GeminiService {
   }
 
   _createPrompt(userData) {
-    // Logowanie surowych danych wejściowych dotyczących dat
-    this.log('GeminiService._createPrompt - Otrzymane dane wejściowe userData:', JSON.stringify(userData, null, 2));
-    this.log(`GeminiService._createPrompt - Surowa wartość planStartDate: ${userData.planStartDate}`);
-    this.log(`GeminiService._createPrompt - Surowa wartość raceDate: ${userData.raceDate}`);
 
     // Definicja funkcji safeGet na początku metody
     const safeGet = (obj, path, defaultValue = 'nie określono') => {
@@ -318,69 +303,62 @@ class GeminiService {
                 const diffTime = parsedRaceDate.getTime() - effectivePlanStartDate.getTime();
                 // Add 1 day to diffDays to ensure the week of the race is included.
                 // Example: race on Sunday, start on Monday of the same week = 6 days diff -> 1 week plan.
-                // race on Monday, start on Monday of same week = 0 days diff -> 1 week plan.
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) +1; // +1 to ensure race week is part of duration
-                planDuration = Math.max(1, Math.ceil(diffDays / 7));
-                raceDateInfo = `Data zawodów docelowych: ${raceDateString}. Plan zostanie dostosowany, aby zakończyć się w tygodniu zawodów.`;
-            } else {
-                raceDateInfo = `Data zawodów docelowych: ${raceDateString} (Uwaga: data zawodów jest w przeszłości lub zbyt blisko daty startu. Czas trwania planu zostanie obliczony domyślnie).`;
             }
-        } else {
-            raceDateInfo = `Data zawodów docelowych: ${raceDateString} (Uwaga: nieprawidłowy format daty. Czas trwania planu zostanie obliczony domyślnie).`;
         }
     }
 
-    if (planDuration === undefined) {
-        const mainGoal = userData.glownyCel;
-        // Użyj zmiennej o zmienionej nazwie
-        const targetDistanceGoal = userData.dystansDocelowy; 
-        planDuration = 8; // default
-        switch (mainGoal) {
-            case 'redukcja_masy_ciala':
-            case 'aktywny_tryb_zycia':
-            case 'zmiana_nawykow':
-            case 'powrot_po_kontuzji':
-            case 'poprawa_kondycji':
-            case 'inny_cel':
-                planDuration = 8;
-                break;
-            case 'zaczac_biegac':
-                planDuration = 6;
-                break;
-            case 'przebiegniecie_dystansu':
-                // Użyj zmiennej o zmienionej nazwie
-                switch (targetDistanceGoal) {
-                    case '5km': planDuration = 6; break;
-                    case '10km': planDuration = 8; break;
-                    case 'polmaraton': planDuration = 12; break;
-                    case 'maraton': planDuration = 16; break;
-                    default: planDuration = 8; break;
-                }
-                break;
-            default:
-                planDuration = 8;
-                break;
-        }
-    }
+    // Oblicz spersonalizowane strefy tętna
+    const personalizedZones = this._calculateHeartRateZones(userData);
+    
+    // Przejdź przez wszystkie tygodnie i dni treningowe
+    const updatedPlan = JSON.parse(JSON.stringify(plan)); // Deep copy
+    
+    updatedPlan.plan_weeks.forEach(week => {
+      if (week.days && Array.isArray(week.days)) {
+        week.days.forEach(day => {
+          if (day.workout && day.workout.target_heart_rate) {
+            const currentHR = day.workout.target_heart_rate;
+            
+            // Mapuj zakres tętna do odpowiedniej strefy
+            let targetZone;
+            if (currentHR.min >= 100 && currentHR.max <= 120) {
+              targetZone = personalizedZones.zone1; // Regeneracja
+            } else if (currentHR.min >= 115 && currentHR.max <= 135) {
+              targetZone = personalizedZones.zone2; // Łatwe tempo
+            } else if (currentHR.min >= 130 && currentHR.max <= 150) {
+              targetZone = personalizedZones.zone2; // Łatwe tempo (często używane)
+            } else if (currentHR.min >= 120 && currentHR.max <= 140) {
+              targetZone = personalizedZones.zone2; // Łatwe tempo
+            } else if (currentHR.min >= 125 && currentHR.max <= 145) {
+              targetZone = personalizedZones.zone2; // Łatwe tempo
+            } else {
+              // Domyślnie użyj strefy 2 dla większości treningów
+              targetZone = personalizedZones.zone2;
+            }
+            
+            // Aktualizuj tylko jeśli mamy spersonalizowane strefy
+            if (targetZone) {
+              day.workout.target_heart_rate = {
+                min: targetZone.min,
+                max: targetZone.max
+              };
+            } else {
+              throw new AppError('Nie udało się spersonalizować stref tętna', 500);
+            }
+          }
+        });
+      }
+    });
 
-    const planDurationInfo = `Planowany czas trwania planu: ${planDuration} tygodni`;
-    
-    let healthInfo = [];
-    
-    if (userData.kontuzje) {
-      healthInfo.push('Użytkownik ma kontuzje');
-      if (userData.opisKontuzji) {
-        healthInfo.push(`Opis kontuzji: ${userData.opisKontuzji}`);
-      }
-      if (userData.lokalizacjaBolu) {
-        healthInfo.push(`Lokalizacja bólu: ${userData.lokalizacjaBolu}`);
-      }
-      if (userData.charakterBolu) {
-        healthInfo.push(`Charakter bólu: ${userData.charakterBolu}`);
-      }
-      if (userData.skalaBolu) {
-        healthInfo.push(`Skala bólu (0-10): ${userData.skalaBolu}`);
-      }
+    // Informacje o bólu użytkownika
+    if (userData.lokalizacjaBolu) {
+      healthInfo.push(`Lokalizacja bólu: ${userData.lokalizacjaBolu}`);
+    }
+    if (userData.charakterBolu) {
+      healthInfo.push(`Charakter bólu: ${userData.charakterBolu}`);
+    }
+    if (userData.skalaBolu) {
+      healthInfo.push(`Skala bólu (0-10): ${userData.skalaBolu}`);
     }
     
     if (userData.hasPrzewlekleChorby && userData.chorobyPrzewlekle && userData.chorobyPrzewlekle.length > 0) {
@@ -452,8 +430,11 @@ class GeminiService {
     };
     this.log('Dane przekazywane do getExamplePlanTemplate:', templateMatcherUserData);
 
-    // Pobranie przykładowego planu - PRZENIESIONE TUTAJ
-    const examplePlan = getExamplePlanTemplate(templateMatcherUserData); // Użyj zmapowanych danych
+    // Pobranie przykładowego planu z RANDOMIZACJĄ - PRZENIESIONE TUTAJ
+    const examplePlan = selectRandomizedPlanTemplate(templateMatcherUserData, {
+      excludedVariants: [], // Można później dodać historię użytkownika
+      forceRandomization: true
+    });
     let examplePlanSection = ''; 
     if (examplePlan) {
       try {
@@ -566,7 +547,21 @@ ${Object.entries(safeGet(this.knowledgeBase, 'exerciseProgression.progressionFac
 - ${factor}: ${values.join(', ')}
 `).join('\\n')}`;
 
-    return `Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Stwórz spersonalizowany plan treningowy na podstawie poniższych informacji o użytkowniku i dostępnej bazie wiedzy.
+    // Dodaj randomizację do promptu dla zwiększenia różnorodności
+    const creativityPrompts = [
+      "Jesteś ekspertem w tworzeniu planów treningowych dla biegaczy. Stwórz spersonalizowany plan z kreatywnym podejściem, używając różnorodnych nazw treningów i motywujących opisów.",
+      "Jesteś doświadczonym trenerem biegowym. Zaprojektuj plan z naciskiem na różnorodność i motywację, używając unikowych nazw treningów i angażujących opisów.",
+      "Jesteś ekspertem w dziedzinie treningu biegowego. Wygeneruj plan z unikalnymi elementami i ciekawymi wyzwaniami, używając kreatywnych nazw treningów.",
+      "Jesteś trenerem personalnym specjalizującym się w bieganiu. Stwórz plan z elementami zabawy i niespodziankami, używając różnorodnych opisów treningów.",
+      "Jesteś ekspertem w treningu biegowym z pasją do innowacji. Zaprojektuj plan z odrębnym charakterem i motywującymi elementami."
+    ];
+    
+    const randomPromptIndex = Math.floor(Math.random() * creativityPrompts.length);
+    const selectedPrompt = creativityPrompts[randomPromptIndex];
+    
+    this.log(`🎲 Wybrano kreatywny prompt #${randomPromptIndex + 1}`);
+    
+    return `${selectedPrompt} Stwórz spersonalizowany plan treningowy na podstawie poniższych informacji o użytkowniku i dostępnej bazie wiedzy.
 
 ### DANE UŻYTKOWNIKA:
 ${ageInfo}
@@ -591,12 +586,89 @@ ${goalsInfoText}
 - ${heartRateZones.zone4.name}: min=${heartRateZones.zone4.min}, max=${heartRateZones.zone4.max}
 - ${heartRateZones.zone5.name}: min=${heartRateZones.zone5.min}, max=${heartRateZones.zone5.max}
 
+### PROFESJONALNA STRUKTURA TRENINGOWA:
+**STREFY TĘTNA PROFESJONALNE:**
+${Object.entries(HEART_RATE_ZONES).map(([key, zone]) => `
+- ${zone.description} (${zone.percentage} HR MAX): RPE ${zone.rpe} - ${zone.purpose}`).join('')}
+
+**KOMPONENTY TRENINGOWE:**
+${Object.entries(TRAINING_COMPONENTS).map(([component, details]) => `
+- ${component}: ${details.duration} - ${details.description || details.structure}
+  ${details.example ? `Przykład: ${details.example}` : ''}
+  ${details.timing ? `Timing: ${details.timing}` : ''}`).join('')}
+
+**PROGRESJA DLA POCZĄTKUJĄCYCH:**
+${Object.entries(BEGINNER_PROGRESSION_PATTERN).map(([period, progression]) => `
+- ${period}: ${progression.maxDuration} min, ${progression.pattern}
+  Strefy HR: ${progression.heartRateZones.join(', ')}
+  Struktura: ${progression.structure}`).join('')}
+
+**PRZYKŁADOWE TRENINGI PROFESJONALNE:**
+${(() => {
+  const examples = [
+    generateDetailedWorkout(1, 1, 'beginner'),
+    generateDetailedWorkout(7, 1, 'beginner'),
+    generateDetailedWorkout(12, 1, 'beginner')
+  ];
+  return examples.map(workout => `
+Tydzień ${workout.name.includes('1') ? '1' : workout.name.includes('7') ? '7' : '12'}: ${workout.name}
+- Struktura: ${workout.structure}
+- Czas: ${workout.duration} min
+- RPE: ${workout.rpeGuidance}
+- Strefy HR: ${workout.heartRateZones.join(', ')}`).join('');
+})()}
+
+**WZORCE RÓŻNORODNYCH TRENINGÓW - UŻYJ JAKO INSPIRACJI:**
+Dzień 1 (Poniedziałek): "Gentle Introduction" 
+- Rozgrzewka: 8 min dynamiczne rozciąganie + aktywacja core
+- Główny: 6x (90 sek trucht RPE 4/10 + 90 sek żywy marsz RPE 2/10)
+- Wyciszenie: 7 min spokojny marsz + rozciąganie nóg
+
+Dzień 2 (Środa): "Building Confidence"
+- Rozgrzewka: 5 min marsz + mobilność bioder  
+- Główny: 4x (3 min trucht RPE 5/10 + 2 min żywy marsz RPE 2/10)
+- Wyciszenie: 10 min spokojny marsz + rozciąganie całego ciała
+
+Dzień 3 (Piątek): "Rhythm & Technique Focus"
+- Rozgrzewka: 6 min marsz + ćwiczenia techniki biegu
+- Główny: 8x (1 min trucht z fokusem na kadencję + 1 min marsz na obserwację) 
+- Wyciszenie: 5 min marsz + ćwiczenia równowagi
+
+KAŻDY TRENING MUSI MIEĆ INNĄ STRUKTURĘ I FOKUS!
+
 ${cooperTestInfo}
 ${examplePlanSection}
 ${knowledgeBaseInfo}
 
 ### WYMAGANA STRUKTURA ODPOWIEDZI:
 Plan musi być zwrócony w następującym formacie JSON.
+
+🚨 KRYTYCZNE PRZYPOMNIENIE PRZED GENEROWANIEM:
+- Sprawdź czy każdy trening w tygodniu ma RÓŻNĄ strukturę interwałów
+- Sprawdź czy każdy trening ma RÓŻNY czas trwania głównej części  
+- Sprawdź czy każdy trening ma INNY fokus i opis
+- Jeśli jakiekolwiek dwa treningi są podobne - PRZEPISZ jeden z nich
+- Każdy dzień musi być unikalny i różnorodny!
+
+🔥 ABSOLUTNIE ZABRONIONE - NIGDY NIE RÓB TEGO:
+- ❌ NIGDY nie używaj tego samego wzorca interwałów (np. "1 min bieg/2 min marsz") dla różnych dni
+- ❌ NIGDY nie powtarzaj identycznego czasu trwania głównej części treningu
+- ❌ NIGDY nie używaj identycznych opisów treningów
+- ❌ NIGDY nie generuj planów gdzie wszystkie dni mają tę samą strukturę
+
+✅ WYMAGANE RÓŻNICE MIĘDZY DNIAMI:
+- Dzień 1: Krótkie interwały (np. 6x 1min bieg/1min marsz) - fokus na rytm
+- Dzień 2: Średnie interwały (np. 4x 2min bieg/2min marsz) - fokus na wytrzymałość  
+- Dzień 3: Długie interwały (np. 3x 3min bieg/1min marsz) - fokus na progres
+- Każdy dzień MUSI mieć inny czas trwania: 20min, 25min, 30min
+- Każdy dzień MUSI mieć inny fokus: technika, kondycja, siła mentalna
+
+🎯 KONKRETNE PRZYKŁADY RÓŻNORODNOŚCI:
+Poniedziałek: "8x (1min bieg RPE 4/10 + 1min marsz RPE 2/10)" - 20min - fokus na kadencję
+Środa: "5x (2min bieg RPE 5/10 + 2min marsz RPE 2/10)" - 25min - fokus na wytrzymałość
+Piątek: "4x (3min bieg RPE 4/10 + 1min marsz RPE 2/10)" - 30min - fokus na progres
+
+JEŚLI WYGENERUJESZ IDENTYCZNE TRENINGI = NATYCHMIASTOWE PRZEPISANIE!
 
 ### SCHEMAT JSON:
 {
@@ -620,10 +692,10 @@ Plan musi być zwrócony w następującym formacie JSON.
           "day_name": string (WAŻNE: użyj DOKŁADNIE jednej z wartości: "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"),
           "date": string (YYYY-MM-DD, data treningu - WAŻNE: oblicz na podstawie daty startu planu i dnia tygodnia),
           "workout": {
-            "type": string,
-            "description": string,
+            "type": string (MUSI BYĆ RÓŻNY dla każdego dnia),
+            "description": string (MUSI BYĆ UNIKALNY - minimum 20 słów, konkretne interwały, różne wzorce),
             "distance": number lub null,
-            "duration": number,
+            "duration": number (MUSI BYĆ RÓŻNY dla każdego dnia - np. 20, 25, 30),
             "target_pace": {
               "min_per_km": number,
               "sec_per_km": number
@@ -746,6 +818,80 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
     - Używaj motywujących nazw treningów jak "Morning energizer", "Weekend warrior", "Midweek challenge"
     - Variuj miejsca i scenariusze: park, ścieżki, boisko, okolice domu
     - Dodawaj elementy mentalne: "focus na oddychaniu", "świadomość techniki", "listening to your body"
+
+27. **WYKORZYSTANIE PROFESJONALNEJ STRUKTURY TRENINGOWEJ:**
+    - Używaj PROFESJONALNYCH STREF TĘTNA z sekcji "PROFESJONALNA STRUKTURA TRENINGOWA"
+    - Stosuj RPE (Rate of Perceived Exertion) w opisach treningów (skala 1-10/10)
+    - Dla początkujących stosuj progresję zgodną z "PROGRESJĄ DLA POCZĄTKUJĄCYCH"
+    - Wprowadzaj elementy rozgrzewki, rozciągania i wyciszenia zgodnie z "KOMPONENTAMI TRENINGOWYMI"
+    - Używaj terminologii z przykładów profesjonalnych: "trucht", "żywy marsz", "żywy bieg", "spokojny marsz"
+    - Strukturyzuj treningi w fazach: rozgrzewka → rozciąganie → główny trening → wyciszenie
+    - Dla początkujących stosuj interwały marsz-bieg zgodnie z wzorcami profesjonalnymi
+
+28. **KRYTYCZNE WYMAGANIA ANTY-MONOTONICZNOŚCI:**
+    - KAŻDY TRENING W TYGODNIU MUSI BYĆ INNY
+    - NIGDY nie powtarzaj tej samej struktury treningu w tym samym tygodniu
+    - Variuj długość interwałów: 1 min/1 min, 2 min/2 min, 3 min/1 min, 1 min/2 min, 4 min/2 min
+    - Różnicuj typy treningów:
+      * Dzień 1: Krótkie interwały (np. 8x 1 min bieg/1 min marsz)
+      * Dzień 2: Średnie interwały (np. 5x 2 min bieg/2 min marsz)  
+      * Dzień 3: Długie interwały (np. 3x 4 min bieg/2 min marsz)
+    - Zmieniaj fokus każdego treningu:
+      * "Fokus na rytmie i technice"
+      * "Fokus na wytrzymałości" 
+      * "Fokus na pewności siebie"
+    - Używaj RÓŻNYCH opisów rozgrzewki i wyciszenia
+    - Variuj czas rozgrzewki: 5-10 min, czas głównego treningu: 20-30 min
+    - Dodawaj unikalne elementy do każdego treningu (np. ćwiczenia równowagi, aktywacja mięśni)
+
+29. **PRZYKŁADY RÓŻNORODNYCH TRENINGÓW DLA POCZĄTKUJĄCYCH:**
+    - Trening A: "Eksploracja różnych temp" - 6x (90 sek bieg/90 sek marsz)
+    - Trening B: "Budowanie pewności" - 4x (3 min bieg/2 min marsz) 
+    - Trening C: "Praca nad techniką" - 8x (1 min bieg/1 min marsz) + ćwiczenia techniki
+    - Trening D: "Weekend challenge" - 3x (4 min bieg/2 min marsz)
+    - Trening E: "Fitness spacer plus" - 20 min marsz + 5x (30 sek bieg/30 sek marsz)
+
+30. **OBOWIĄZKOWE SPRAWDZENIE RÓŻNORODNOŚCI:**
+    - Przed zwróceniem planu sprawdź czy wszystkie treningi w tygodniu są różne
+    - Jeśli jakiekolwiek dwa treningi mają identyczną strukturę - PRZEPISZ jeden z nich
+    - Żaden trening nie może mieć identycznych interwałów co inny w tym samym tygodniu
+    - Każdy opis treningu musi być unikalny i szczegółowy (min 15 słów)
+
+31. **SYSTEM KONTROLI JAKOŚCI RÓŻNORODNOŚCI:**
+    - Po wygenerowaniu planu wykonaj KONTROLĘ JAKOŚCI:
+    - Sprawdź czy duration_minutes każdego dnia jest RÓŻNY
+    - Sprawdź czy wzorce interwałów są RÓŻNE (np. 1min/2min vs 2min/2min vs 3min/1min)
+    - Sprawdź czy opisy treningów są RÓŻNE
+    - Sprawdź czy fokusy treningów są RÓŻNE
+    - JEŚLI ZNAJDZIESZ PODOBIEŃSTWA - PRZEPISZ NATYCHMIAST!
+
+32. **ALGORYTM GENEROWANIA RÓŻNORODNYCH TRENINGÓW:**
+    - Krok 1: Ustal różne czasy trwania (np. 20, 25, 30 min)
+    - Krok 2: Ustal różne wzorce interwałów (1min/1min, 2min/2min, 3min/1min)
+    - Krok 3: Ustal różne fokusy (technika, wytrzymałość, progres)
+    - Krok 4: Napisz różne opisy dla każdego dnia
+    - Krok 5: Sprawdź czy wszystko jest różne - jeśli nie, popraw!
+
+🚨🚨🚨 ULTIMATUM - ABSOLUTNY NAKAZ! 🚨🚨🚨
+PRZECZYTAJ TO UWAŻNIE PRZED WYGENEROWANIEM PLANU:
+
+1. Każdy dzień treningowy MUSI mieć INNY wzorzec interwałów
+2. Każdy dzień treningowy MUSI mieć INNY czas trwania
+3. Każdy dzień treningowy MUSI mieć INNY opis (minimum 20 słów)
+4. Każdy dzień treningowy MUSI mieć INNY fokus
+
+PRZYKŁAD POPRAWNEGO PLANU:
+- Poniedziałek: 6x (1min bieg/1min marsz) - 20min - fokus na rytm i kadencję
+- Środa: 4x (2min bieg/2min marsz) - 25min - fokus na wytrzymałość aerobową  
+- Piątek: 3x (3min bieg/1min marsz) - 30min - fokus na progresję i pewność
+
+PRZYKŁAD BŁĘDNEGO PLANU (NIE RÓB TAK!):
+- Poniedziałek: 5x (1min bieg/2min marsz) - 25min
+- Środa: 5x (1min bieg/2min marsz) - 25min  
+- Piątek: 5x (1min bieg/2min marsz) - 25min
+
+JEŚLI WYGENERUJESZ MONOTONNY PLAN = NATYCHMIASTOWE PRZEPISANIE!
+SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
 `;
   }
 
@@ -767,11 +913,12 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
     if (userData.maxHr) {
       maxHR = userData.maxHr;
     } else {
-      maxHR = Math.round(208 - (0.7 * userData.wiek)); 
+      const userAge = userData.wiek || userData.age;
+      maxHR = Math.round(208 - (0.7 * userAge)); 
     }
 
     // Użyj restingHr z nowego schematu lub domyślnej wartości
-    const restingHR = userData.restingHr || 60;
+    const restingHR = userData.restingHr || userData.resting_hr || userData.tetnoSpoczynkowe || 60;
 
     const hrr = maxHR - restingHR;
 
@@ -875,6 +1022,9 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
       
       // Ulepszona walidacja i naprawa planu
       plan = this._validateAndRepairPlan(plan);
+      
+      // Diversity checking is now handled in parseWeeklyPlanResponse for weekly plans
+      // This allows for proper retry logic when plans are too monotonous
       
       return plan;
     } catch (error) {
@@ -1112,7 +1262,7 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
       } else {
         // Walidacja dni
         week.days = week.days.map((day, dayIndex) => {
-          return this._validateAndRepairDay(day, dayIndex);
+          return this._validateAndRepairDay(day, dayIndex, index + 1);
         });
       }
 
@@ -1162,11 +1312,11 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
    * @param {number} dayIndex - Indeks dnia
    * @returns {Object} - Naprawiony dzień
    */
-  _validateAndRepairDay(day, dayIndex) {
+  _validateAndRepairDay(day, dayIndex, weekNumber = 1) {
     const defaultDays = ['poniedziałek', 'środa', 'piątek', 'niedziela', 'wtorek', 'czwartek', 'sobota'];
     
     if (!day || typeof day !== 'object') {
-      return this._createDefaultDay(defaultDays[dayIndex % defaultDays.length]);
+      return this._createDefaultDay(defaultDays[dayIndex % defaultDays.length], weekNumber);
     }
 
     if (!day.day_name) {
@@ -1180,21 +1330,88 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
     }
 
     if (!day.workout || typeof day.workout !== 'object') {
-      day.workout = this._createDefaultWorkout();
-    } else {
-      // Walidacja i naprawa workout
-      if (!day.workout.type) day.workout.type = "easy_run";
-      if (!day.workout.description) day.workout.description = "Trening biegowy";
-      if (typeof day.workout.distance !== 'number') day.workout.distance = 5;
-      if (typeof day.workout.duration !== 'number') day.workout.duration = 30;
+      day.workout = this._createDefaultWorkout(weekNumber);
+    }
+    
+    // Przeniesienie danych z nowej struktury Gemini do oczekiwanej struktury frontend
+    if (day.day_of_week && typeof day.day_of_week === 'string') {
+      day.day_name = day.day_of_week.toLowerCase();
+    }
+    if (day.duration_minutes && typeof day.duration_minutes === 'number') {
+      day.workout.duration = day.duration_minutes;
+    }
+    if (day.type && typeof day.type === 'string') {
+      day.workout.type = day.type;
+    }
+    if (day.description && typeof day.description === 'string') {
+      day.workout.description = day.description;
+    }
+    if (day.focus && typeof day.focus === 'string') {
+      day.workout.focus = day.focus;
+    }
+    if (day.main_workout && typeof day.main_workout === 'string') {
+      day.workout.main_workout = day.main_workout;
+    }
+    
+    // Walidacja i naprawa workout z fallbackami
+    if (!day.workout.type) day.workout.type = "easy_run";
+    if (!day.workout.description) day.workout.description = "Łagodny bieg budujący bazę wytrzymałościową";
+    if (typeof day.workout.duration !== 'number') day.workout.duration = 30;
+    
+    // Inteligentna kalkulacja dystansu na podstawie typu treningu
+    if (typeof day.workout.distance !== 'number') {
+      const duration = day.workout.duration || 30;
+      const workoutType = day.workout.type?.toLowerCase() || 'easy';
+      const mainWorkout = day.workout.main_workout || day.main_workout || '';
       
-      if (!day.workout.target_heart_rate) {
-        day.workout.target_heart_rate = { min: 120, max: 150, zone: "Strefa 2" };
+      let estimatedDistance;
+      
+      if (workoutType.includes('interval') || mainWorkout.includes('x') || mainWorkout.includes('min bieg')) {
+        // Dla interwałów - nie podawamy dystansu, bo zależy od tempa użytkownika
+        day.workout.distance = null;
+        day.workout.distance_note = "Dystans zależy od Twojego tempa";
+      } else if (workoutType.includes('tempo')) {
+        // Tempo run - szybsze tempo ~5 min/km
+        const tempoPaceMinPerKm = 5;
+        estimatedDistance = Math.round((duration / tempoPaceMinPerKm) * 10) / 10;
+        day.workout.distance = estimatedDistance;
+        day.workout.distance_note = "Szacunkowy dystans przy tempie ~5:00 min/km";
+      } else if (workoutType.includes('recovery') || workoutType.includes('regeneracja')) {
+        // Recovery - wolniejsze tempo ~7 min/km
+        const recoveryPaceMinPerKm = 7;
+        estimatedDistance = Math.round((duration / recoveryPaceMinPerKm) * 10) / 10;
+        day.workout.distance = estimatedDistance;
+        day.workout.distance_note = "Szacunkowy dystans przy spokojnym tempie";
+      } else {
+        // Easy run - średnie tempo 6 min/km
+        const easyPaceMinPerKm = 6;
+        estimatedDistance = Math.round((duration / easyPaceMinPerKm) * 10) / 10;
+        day.workout.distance = estimatedDistance;
+        day.workout.distance_note = "Szacunkowy dystans przy komfortowym tempie";
+      }
+    }
+    
+    // Inteligentne obliczanie stref tętna na podstawie typu treningu
+    if (!day.workout.target_heart_rate) {
+      const workoutType = day.workout.type?.toLowerCase() || 'easy';
+      let heartRateZone;
+      
+      if (workoutType.includes('interval') || workoutType.includes('tempo')) {
+        heartRateZone = { min: 150, max: 170, zone: "Strefa 4" };
+      } else if (workoutType.includes('recovery') || workoutType.includes('regeneracja')) {
+        heartRateZone = { min: 110, max: 130, zone: "Strefa 1" };
+      } else if (workoutType.includes('long') || workoutType.includes('długi')) {
+        heartRateZone = { min: 130, max: 150, zone: "Strefa 3" };
+      } else {
+        // Default: easy run
+        heartRateZone = { min: 120, max: 145, zone: "Strefa 2" };
       }
       
-      if (!day.workout.support_exercises) {
-        day.workout.support_exercises = [];
-      }
+      day.workout.target_heart_rate = heartRateZone;
+    }
+    
+    if (!day.workout.support_exercises) {
+      day.workout.support_exercises = [];
     }
 
     return day;
@@ -1205,24 +1422,28 @@ Pamiętaj, że sekcja 'PRZYKŁADOWY PLAN TRENINGOWY' służy WYŁĄCZNIE jako wz
    * @param {string} dayName - Nazwa dnia
    * @returns {Object} - Domyślny dzień
    */
-  _createDefaultDay(dayName) {
+  _createDefaultDay(dayName, weekNumber = 1) {
     return {
       day_name: dayName,
       date: new Date().toISOString().split('T')[0],
-      workout: this._createDefaultWorkout()
+      workout: this._createDefaultWorkout(weekNumber)
     };
   }
 
   /**
-   * Tworzy domyślny trening
+   * Tworzy domyślny trening z dynamicznym dystansem
+   * @param {number} weekNumber - Numer tygodnia (dla progresji)
    * @returns {Object} - Domyślny trening
    */
-  _createDefaultWorkout() {
+  _createDefaultWorkout(weekNumber = 1) {
+    const baseDistance = 3 + (weekNumber * 0.3); // Progresywny dystans
+    const baseDuration = 20 + (weekNumber * 3); // Progresywny czas
+    
     return {
       type: "easy_run",
       description: "Łagodny bieg budujący bazę wytrzymałościową",
-      distance: 5,
-      duration: 30,
+      distance: Math.round(baseDistance * 10) / 10, // Zaokrąglenie do 1 miejsca po przecinku
+      duration: baseDuration,
       target_heart_rate: { min: 120, max: 150, zone: "Strefa 2" },
       support_exercises: []
     };
@@ -1515,7 +1736,19 @@ Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON mu
         });
 
         this.log('Otrzymano odpowiedź z Gemini API dla planu tygodniowego.');
-        return this.parseWeeklyPlanResponse(response, weeklyData);
+        const plan = await this.parseWeeklyPlanResponse(response, weeklyData);
+        
+        // Próbuj zastosować spersonalizowane strefy tętna do planu
+        try {
+          const personalizedPlan = this._applyPersonalizedHeartRateZones(plan, weeklyData.userData);
+          this.log('Pomyślnie spersonalizowano strefy tętna');
+          return personalizedPlan;
+        } catch (personalizationError) {
+          this.error('Błąd personalizacji stref tętna, używam planu bez personalizacji:', {
+            message: personalizationError.message
+          });
+          return plan; // Zwróć plan bez personalizacji
+        }
 
       } catch (geminiError) {
         this.error(`\n⚠️ Błąd podczas próby ${attempt}/${maxRetries} generowania planu tygodniowego przez Gemini:`, {
@@ -1568,6 +1801,46 @@ DOSTOSOWANIA:
 - Jeśli realizacja była wysoka (>80%), można delikatnie zwiększyć wyzwanie
 - Uwzględnij fazę treningową: ${weeklyData.currentPhase}
 - Tempo progresji: ${((weeklyData.progressionRate - 1) * 100).toFixed(1)}% tygodniowo
+
+🚨🚨🚨 ULTIMATUM - ABSOLUTNY NAKAZ! 🚨🚨🚨
+PRZECZYTAJ TO UWAŻNIE PRZED WYGENEROWANIEM PLANU:
+
+1. Każdy dzień treningowy MUSI mieć INNY wzorzec interwałów
+2. Każdy dzień treningowy MUSI mieć INNY czas trwania (duration_minutes)
+3. Każdy dzień treningowy MUSI mieć INNY opis (description) - minimum 20 słów
+4. Każdy dzień treningowy MUSI mieć INNY fokus (focus)
+5. Każdy dzień treningowy MUSI mieć INNY typ treningu (type)
+
+PRZYKŁAD POPRAWNEGO PLANU DLA POCZĄTKUJĄCYCH:
+- Poniedziałek: 
+  * type: "bieg interwałowy z krótkim wysiłkiem"
+  * duration_minutes: 20
+  * main_workout: "6x (1min bieg / 1min marsz)"
+  * focus: "Adaptacja do rytmu i technika kroku"
+  * description: "Krótkie interwały biegowe przeplatane marszem..."
+
+- Środa:
+  * type: "bieg interwałowy z umiarkowanym wysiłkiem"  
+  * duration_minutes: 25
+  * main_workout: "4x (2min bieg / 2min marsz)"
+  * focus: "Budowanie wytrzymałości aerobowej"
+  * description: "Średnie interwały dla rozwoju podstawy tlenowej..."
+
+- Piątek:
+  * type: "bieg progresywny z długimi odcinkami"
+  * duration_minutes: 30
+  * main_workout: "3x (3min bieg / 1min marsz)"
+  * focus: "Zwiększenie pewności i progresja"
+  * description: "Dłuższe odcinki biegowe z krótkimi przerwami..."
+
+ABSOLUTNIE ZABRONIONE - BŁĘDNE WZORCE (NIE RÓB TAK!):
+❌ Wszystkie dni z tym samym czasem: 25min, 25min, 25min
+❌ Wszystkie dni z tym samym opisem: "Łatwy bieg"
+❌ Wszystkie dni z tym samym typem: "bieg interwałowy"
+❌ Wszystkie dni z tym samym wzorcem: "5x (1min/2min)"
+
+SYSTEM AUTOMATYCZNIE ODRZUCI MONOTONNY PLAN!
+SPRAWDŹ PRZED WYSŁANIEM: CZY DURATION, TYPE, DESCRIPTION, FOCUS są RÓŻNE?
 
 STRUKTURA ODPOWIEDZI (zwróć TYLKO JSON):
 {
@@ -1689,6 +1962,20 @@ Pamiętaj o dostosowaniu planu do:
       // Parsuj odpowiedź z Gemini API
       const planData = this._parseResponse(response.data);
 
+      // Sprawdź różnorodność planu PRZED finalizacją
+      if (planData.plan_weeks && planData.plan_weeks.length > 0) {
+        const diversityResult = checkWeekDiversity(planData.plan_weeks[0]);
+        
+        if (!diversityResult.isAcceptable) {
+          this.log('🚨 WYKRYTO MONOTONNY PLAN W WEEKLY PARSER - RZUCANIE BŁĘDU DLA RETRY!');
+          this.log('Diversity Score:', diversityResult.diversityScore);
+          this.log('Problemy:', diversityResult.issues);
+          
+          // Rzuć błąd który spowoduje retry całego procesu generowania
+          throw new AppError('Generated plan is too monotonous, retrying...', 422);
+        }
+      }
+
       // Dodaj metadane specyficzne dla planu tygodniowego
       planData.planType = 'weekly';
       planData.weekNumber = weeklyData.weekNumber;
@@ -1710,6 +1997,84 @@ Pamiętaj o dostosowaniu planu do:
       this.log('Błąd parsowania odpowiedzi planu tygodniowego: ' + error.message);
       throw new AppError('Błąd przetwarzania wygenerowanego planu tygodniowego', 500);
     }
+  }
+
+  /**
+   * Aktualizuje strefy tętna w planie treningowym na podstawie spersonalizowanych obliczeń
+   * @param {Object} plan - Plan treningowy do aktualizacji
+   * @param {Object} userData - Dane użytkownika zawierające wiek i tętno spoczynkowe
+   * @returns {Object} - Plan z zaktualizowanymi strefami tętna
+   * @throws {AppError} - Rzuca błąd gdy brak danych do spersonalizowania
+   */
+  _applyPersonalizedHeartRateZones(plan, userData) {
+    if (!plan || !plan.plan_weeks) {
+      throw new AppError('Nieprawidłowy plan treningowy', 400);
+    }
+
+    if (!userData) {
+      throw new AppError('Brak danych użytkownika do spersonalizacji stref tętna', 400);
+    }
+
+    this.log('Rozpoczęcie personalizacji stref tętna', {
+      userId: userData.supabaseId || 'unknown',
+      hasAge: !!(userData.wiek || userData.age),
+      hasRestingHr: !!(userData.restingHr || userData.resting_hr || userData.tetnoSpoczynkowe),
+      availableFields: Object.keys(userData)
+    });
+
+    // Walidacja wymaganych danych użytkownika
+    const userAge = userData.wiek || userData.age;
+    if (!userAge || userAge < 10 || userAge > 100) {
+      throw new AppError('Nieprawidłowa wartość wieku. Wiek musi być pomiędzy 10 a 100 lat.', 400);
+    }
+
+    const restingHr = userData.restingHr || userData.resting_hr || userData.tetnoSpoczynkowe || 60;
+    if (restingHr < 30 || restingHr > 100) {
+      throw new AppError('Nieprawidłowa wartość tętna spoczynkowego. Tętno musi być pomiędzy 30 a 100 uderzeń na minutę.', 400);
+    }
+
+    // Oblicz spersonalizowane strefy tętna
+    const personalizedZones = this._calculateHeartRateZones(userData);
+    
+    // Przejdź przez wszystkie tygodnie i dni treningowe
+    const updatedPlan = JSON.parse(JSON.stringify(plan)); // Deep copy
+    
+    updatedPlan.plan_weeks.forEach(week => {
+      if (week.days && Array.isArray(week.days)) {
+        week.days.forEach(day => {
+          if (day.workout && day.workout.target_heart_rate) {
+            const currentHR = day.workout.target_heart_rate;
+            
+            // Mapuj zakres tętna do odpowiedniej strefy
+            let targetZone;
+            if (currentHR.min >= 100 && currentHR.max <= 120) {
+              targetZone = personalizedZones.zone1; // Regeneracja
+            } else if (currentHR.min >= 115 && currentHR.max <= 135) {
+              targetZone = personalizedZones.zone2; // Łatwe tempo
+            } else if (currentHR.min >= 130 && currentHR.max <= 150) {
+              targetZone = personalizedZones.zone2; // Łatwe tempo (często używane)
+            } else if (currentHR.min >= 120 && currentHR.max <= 140) {
+              targetZone = personalizedZones.zone2; // Łatwe tempo
+            } else if (currentHR.min >= 125 && currentHR.max <= 145) {
+              targetZone = personalizedZones.zone2; // Łatwe tempo
+            } else {
+              // Domyślnie użyj strefy 2 dla większości treningów
+              targetZone = personalizedZones.zone2;
+            }
+            
+            // Aktualizuj tylko jeśli mamy spersonalizowane strefy
+            if (targetZone) {
+              day.workout.target_heart_rate = {
+                min: targetZone.min,
+                max: targetZone.max
+              };
+            }
+          }
+        });
+      }
+    });
+
+    return updatedPlan;
   }
 }
 

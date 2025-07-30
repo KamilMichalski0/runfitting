@@ -28,6 +28,7 @@ const AppError = require('./utils/app-error');
 
 // Import konfiguracji bazy danych
 const { connectDB } = require('./config/database');
+const aiJobService = require('./services/ai-job.service');
 
 // Konfiguracja środowiska
 dotenv.config();
@@ -142,6 +143,11 @@ app.use(globalErrorHandler);
 // Połączenie z bazą danych MongoDB tylko poza środowiskiem testowym
 if (process.env.NODE_ENV !== 'test') {
   connectDB();
+  
+  // Inicjalizacja AI Job Service z Redis queue
+  aiJobService.initialize().catch(err => {
+    console.error('Failed to initialize AI Job Service:', err);
+  });
 }
 
 // Konfiguracja portu i uruchomienie serwera
