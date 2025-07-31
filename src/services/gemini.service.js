@@ -1316,7 +1316,7 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
     const defaultDays = ['poniedziałek', 'środa', 'piątek', 'niedziela', 'wtorek', 'czwartek', 'sobota'];
     
     if (!day || typeof day !== 'object') {
-      return this._createDefaultDay(defaultDays[dayIndex % defaultDays.length], weekNumber);
+      return this._createDefaultDay(defaultDays[dayIndex % defaultDays.length], weekNumber, dayIndex);
     }
 
     if (!day.day_name) {
@@ -1330,7 +1330,7 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
     }
 
     if (!day.workout || typeof day.workout !== 'object') {
-      day.workout = this._createDefaultWorkout(weekNumber);
+      day.workout = this._createDefaultWorkout(weekNumber, dayIndex);
     }
     
     // Przeniesienie danych z nowej struktury Gemini do oczekiwanej struktury frontend
@@ -1420,32 +1420,100 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
   /**
    * Tworzy domyślny dzień treningowy
    * @param {string} dayName - Nazwa dnia
+   * @param {number} weekNumber - Numer tygodnia
+   * @param {number} dayIndex - Indeks dnia w tygodniu (0-6)
    * @returns {Object} - Domyślny dzień
    */
-  _createDefaultDay(dayName, weekNumber = 1) {
+  _createDefaultDay(dayName, weekNumber = 1, dayIndex = 0) {
+    // Mapowanie nazwy dnia na indeks
+    const dayNameToIndex = {
+      'poniedziałek': 0, 'monday': 0,
+      'wtorek': 1, 'tuesday': 1,
+      'środa': 2, 'wednesday': 2,
+      'czwartek': 3, 'thursday': 3,
+      'piątek': 4, 'friday': 4,
+      'sobota': 5, 'saturday': 5,
+      'niedziela': 6, 'sunday': 6
+    };
+    
+    const calculatedDayIndex = dayNameToIndex[dayName.toLowerCase()] ?? dayIndex;
+    
     return {
       day_name: dayName,
       date: new Date().toISOString().split('T')[0],
-      workout: this._createDefaultWorkout(weekNumber)
+      workout: this._createDefaultWorkout(weekNumber, calculatedDayIndex)
     };
   }
 
   /**
-   * Tworzy domyślny trening z dynamicznym dystansem
+   * Tworzy domyślny trening z różnorodnymi dystansami
    * @param {number} weekNumber - Numer tygodnia (dla progresji)
+   * @param {number} dayIndex - Indeks dnia w tygodniu (0-6) dla różnorodności
    * @returns {Object} - Domyślny trening
    */
-  _createDefaultWorkout(weekNumber = 1) {
-    const baseDistance = 3 + (weekNumber * 0.3); // Progresywny dystans
-    const baseDuration = 20 + (weekNumber * 3); // Progresywny czas
+  _createDefaultWorkout(weekNumber = 1, dayIndex = 0) {
+    // Różnorodne wzorce dystansów dla każdego dnia tygodnia
+    const distancePatterns = [
+      2.5,  // Poniedziałek - łagodny start
+      4.0,  // Wtorek - średni dystans  
+      3.0,  // Środa - krótszy bieg
+      5.0,  // Czwartek - dłuższy trening
+      2.0,  // Piątek - regeneracyjny
+      6.0,  // Sobota - długi bieg
+      3.5   // Niedziela - umiarkowany
+    ];
+    
+    // Wzorce typów treningów
+    const workoutTypes = [
+      { type: "easy_run", description: "Łagodny bieg budujący bazę wytrzymałościową" },
+      { type: "tempo", description: "Bieg w tempie progowym poprawiający wytrzymałość" },
+      { type: "easy_run", description: "Spokojny bieg regeneracyjny" },
+      { type: "interval", description: "Trening interwałowy poprawiający VO2max" },
+      { type: "recovery", description: "Bardzo łagodny bieg regeneracyjny" },
+      { type: "long", description: "Długi bieg budujący wytrzymałość bazową" },
+      { type: "easy_run", description: "Umiarkowany bieg w tempie aerobowym" }
+    ];
+    
+    // Wybierz wzorzec na podstawie dnia tygodnia
+    const baseDistance = distancePatterns[dayIndex % distancePatterns.length];
+    const workout = workoutTypes[dayIndex % workoutTypes.length];
+    
+    // Progresja tygodniowa (5-15% wzrost co tydzień)
+    const weeklyProgression = 1 + ((weekNumber - 1) * 0.1);
+    const finalDistance = Math.round((baseDistance * weeklyProgression) * 10) / 10;
+    
+    // Dynamiczny czas na podstawie dystansu i typu treningu  
+    const paceMultiplier = {
+      "easy_run": 6.0,     // 6 min/km
+      "tempo": 5.0,        // 5 min/km  
+      "interval": 4.5,     // 4:30 min/km
+      "long": 6.5,         // 6:30 min/km
+      "recovery": 7.0      // 7 min/km
+    };
+    
+    const pace = paceMultiplier[workout.type] || 6.0;
+    const duration = Math.round(finalDistance * pace);
+    
+    // Dynamiczne strefy tętna
+    const heartRateZones = {
+      "easy_run": { min: 120, max: 150, zone: "Strefa 2" },
+      "tempo": { min: 155, max: 175, zone: "Strefa 4" },
+      "interval": { min: 175, max: 190, zone: "Strefa 5" },
+      "long": { min: 120, max: 145, zone: "Strefa 2" },
+      "recovery": { min: 100, max: 130, zone: "Strefa 1" }
+    };
     
     return {
-      type: "easy_run",
-      description: "Łagodny bieg budujący bazę wytrzymałościową",
-      distance: Math.round(baseDistance * 10) / 10, // Zaokrąglenie do 1 miejsca po przecinku
-      duration: baseDuration,
-      target_heart_rate: { min: 120, max: 150, zone: "Strefa 2" },
-      support_exercises: []
+      type: workout.type,
+      description: workout.description,
+      distance: finalDistance,
+      duration_minutes: duration,
+      target_heart_rate: heartRateZones[workout.type] || heartRateZones["easy_run"],
+      support_exercises: [],
+      main_workout: `${finalDistance}km w tempie ${workout.type === 'easy_run' ? 'łagodnym' : 
+                                                 workout.type === 'tempo' ? 'progowym' :
+                                                 workout.type === 'interval' ? 'interwałowym' :
+                                                 workout.type === 'long' ? 'długim' : 'regeneracyjnym'}`
     };
   }
 
@@ -1489,22 +1557,23 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
    */
   _createDefaultDays(weekNum) {
     const defaultDays = ['poniedziałek', 'środa', 'piątek'];
-    return defaultDays.map((dayName, index) => ({
-      day_name: dayName,
-      date: this._calculateDate(weekNum, index),
-      workout: {
-        type: index === 0 ? "easy_run" : index === 1 ? "tempo_run" : "long_run",
-        description: index === 0 ? "Łagodny bieg" : index === 1 ? "Trening tempowy" : "Długi bieg",
-        distance: 3 + weekNum * 0.5 + index,
-        duration: 25 + weekNum * 2 + index * 5,
-        target_heart_rate: { 
-          min: 120 + index * 10, 
-          max: 150 + index * 10, 
-          zone: `Strefa ${index + 2}` 
-        },
-        support_exercises: []
-      }
-    }));
+    
+    // Mapowanie nazw dni na indeksy tygodnia dla lepszej różnorodności
+    const dayNameToIndex = {
+      'poniedziałek': 0, // Poniedziałek
+      'środa': 2,        // Środa  
+      'piątek': 4        // Piątek
+    };
+    
+    return defaultDays.map((dayName, index) => {
+      const dayIndex = dayNameToIndex[dayName] || index;
+      
+      return {
+        day_name: dayName,
+        date: this._calculateDate(weekNum, index),
+        workout: this._createDefaultWorkout(weekNum, dayIndex)
+      };
+    });
   }
 
   /**

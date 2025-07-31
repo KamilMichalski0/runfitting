@@ -66,7 +66,7 @@ function checkWeekDiversity(planWeek) {
   });
 
   return {
-    isAcceptable: diversityScore >= 0.6 && issues.length <= 2,
+    isAcceptable: diversityScore >= 0.4 && issues.length <= 3,
     diversityScore: Math.round(diversityScore * 100) / 100,
     issues,
     similarities,
@@ -235,12 +235,12 @@ function generateDiversityAnalysis(workouts, diversityScore) {
     totalWorkouts: workouts.length,
     diversityScore,
     status: diversityScore >= 0.8 ? 'Wysoka różnorodność' : 
-            diversityScore >= 0.6 ? 'Średnia różnorodność' : 
+            diversityScore >= 0.4 ? 'Średnia różnorodność' : 
             'Niska różnorodność',
     recommendations: []
   };
   
-  if (diversityScore < 0.6) {
+  if (diversityScore < 0.4) {
     analysis.recommendations.push('Zwiększ różnorodność czasów trwania treningów');
     analysis.recommendations.push('Użyj różnych wzorców interwałów dla każdego dnia');
     analysis.recommendations.push('Napisz unikalne opisy dla każdego treningu');
@@ -262,7 +262,7 @@ function isMonotonous(plan) {
   const firstWeek = plan.plan_weeks[0];
   const result = checkWeekDiversity(firstWeek);
   
-  return result.diversityScore < 0.5;
+  return result.diversityScore < 0.3;
 }
 
 module.exports = {

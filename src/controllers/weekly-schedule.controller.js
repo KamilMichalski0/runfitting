@@ -498,12 +498,22 @@ WeeklyScheduleController.prototype.getAllWeeklyPlans = async function(req, res, 
     
     try {
       schedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
-      if (schedule && schedule.progressTracking) {
-        totalWeeks = schedule.progressTracking.totalWeeksDelivered || totalWeeks;
-        currentWeek = schedule.progressTracking.weekNumber || currentWeek;
+      if (schedule) {
+        // Use longTermGoal.remainingWeeks if available for total program duration
+        if (schedule.longTermGoal && schedule.longTermGoal.remainingWeeks) {
+          totalWeeks = schedule.longTermGoal.remainingWeeks;
+        } else {
+          // Default to 12 weeks if no specific goal is set
+          totalWeeks = 12;
+        }
+        
+        if (schedule.progressTracking) {
+          currentWeek = schedule.progressTracking.weekNumber || currentWeek;
+        }
       }
     } catch (scheduleError) {
-      logInfo(`No schedule found for user ${userId}, using plan-based metadata`);
+      logInfo(`No schedule found for user ${userId}, using default 12 weeks program`);
+      totalWeeks = 12; // Default to 12 weeks program
     }
 
     res.json({
