@@ -29,6 +29,7 @@ const AppError = require('./utils/app-error');
 // Import konfiguracji bazy danych
 const { connectDB } = require('./config/database');
 const aiJobService = require('./services/ai-job.service');
+const sseNotificationService = require('./services/sse-notification.service');
 
 // Konfiguracja środowiska
 dotenv.config();
@@ -149,6 +150,19 @@ if (process.env.NODE_ENV !== 'test') {
     console.error('Failed to initialize AI Job Service:', err);
   });
 }
+
+// Graceful shutdown dla SSE connections
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, closing SSE connections...');
+  sseNotificationService.closeAllConnections();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, closing SSE connections...');
+  sseNotificationService.closeAllConnections();
+  process.exit(0);
+});
 
 // Konfiguracja portu i uruchomienie serwera
 const PORT = process.env.PORT || 3002;

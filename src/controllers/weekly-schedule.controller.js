@@ -2,6 +2,8 @@ const WeeklyPlanDeliveryService = require('../services/weekly-plan-delivery.serv
 const TrainingPlan = require('../models/training-plan.model');
 const AppError = require('../utils/app-error');
 const { logError, logInfo, logWarning } = require('../utils/logger');
+const aiJobService = require('../services/ai-job.service');
+const sseNotificationService = require('../services/sse-notification.service');
 
 /**
  * Kontroler odpowiedzialny za zarządzanie harmonogramami dostarczania planów tygodniowych
@@ -22,6 +24,8 @@ function WeeklyScheduleController() {
   this.getAllWeeklyPlans = this.getAllWeeklyPlans.bind(this);
   this.generateNewPlan = this.generateNewPlan.bind(this);
   this.deleteAllPlans = this.deleteAllPlans.bind(this);
+  this.getJobStatus = this.getJobStatus.bind(this);
+  this.getNotifications = this.getNotifications.bind(this);
 }
 
 WeeklyScheduleController.prototype.createSchedule = async function(req, res, next) {
@@ -266,6 +270,27 @@ WeeklyScheduleController.prototype.updateProgress = async function(req, res, nex
       progressData
     );
 
+    let jobId = null;
+    // Jeśli zaktualizowano postęp, wygeneruj nowy plan w kolejce Redis
+    if (result.scheduleUpdated || result.updatedPlan) {
+      try {
+        // Pobierz harmonogram dla kolejki
+        const schedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
+        
+        jobId = await aiJobService.queueWeeklyPlanGeneration(
+          userId,
+          schedule._id,
+          { resetToWeekOne: false },
+          { priority: 2 } // Wyższy priorytet dla generowania po ocenie
+        );
+        
+        logInfo(`Dodano zadanie generowania kolejnego planu do kolejki: ${jobId}`);
+      } catch (queueError) {
+        logError('Błąd podczas dodawania zadania do kolejki:', queueError);
+        // Nie blokuj odpowiedzi jeśli kolejka nie działa
+      }
+    }
+
     // Przygotuj odpowiedź w zależności od tego co zostało zaktualizowane
     const responseData = {
       message: result.message || 'Postęp został zaktualizowany',
@@ -275,10 +300,12 @@ WeeklyScheduleController.prototype.updateProgress = async function(req, res, nex
       }
     };
 
-    // Dodaj informację o generowaniu planu w tle
-    if (result.planGenerationQueued) {
+    // Dodaj informację o kolejce Redis
+    if (jobId) {
       responseData.planGenerationQueued = true;
-      responseData.message = result.message || 'Postęp zapisany, nowy plan jest generowany w tle';
+      responseData.jobId = jobId;
+      responseData.statusUrl = `/api/plans/status/${jobId}`;
+      responseData.message = 'Postęp zapisany, nowy plan jest generowany w kolejce Redis';
     }
 
     // Zachowaj starą logikę dla przypadków gdy plan jest od razu dostępny (nie powinno się zdarzyć)
@@ -396,20 +423,29 @@ WeeklyScheduleController.prototype.manualDelivery = async function(req, res, nex
       logInfo(`Using real schedule - progressing from week ${currentWeek} to week ${expectedWeekNumber}`);
     }
 
-    const trainingPlan = await this.weeklyPlanDeliveryService.generateWeeklyPlan(schedule, resetWeekNumber);
-
-    // The actual week number should come from the generated plan
-    const actualWeekNumber = trainingPlan.weekNumber || expectedWeekNumber;
+    // Dodaj zadanie do kolejki Redis zamiast synchronicznego generowania
+    const planData = {
+      resetToWeekOne: resetWeekNumber,
+      mockSchedule: resetWeekNumber ? schedule : null
+    };
+    
+    const jobId = await aiJobService.queueWeeklyPlanGeneration(
+      userId,
+      resetWeekNumber ? null : schedule._id,
+      planData,
+      { priority: 3 } // Najwyższy priorytet dla ręcznego generowania
+    );
 
     res.json({
-      status: 'success',
+      status: 'queued',
       data: {
-        trainingPlan,
-        weekNumber: actualWeekNumber,
+        jobId,
+        expectedWeekNumber,
         isNewPlan: resetWeekNumber,
+        statusUrl: `/api/plans/status/${jobId}`,
         message: resetWeekNumber 
-          ? `Nowy plan wygenerowany od tygodnia ${actualWeekNumber}`
-          : `Plan progresji wygenerowany dla tygodnia ${actualWeekNumber}`
+          ? `Nowy plan jest generowany w kolejce od tygodnia ${expectedWeekNumber}`
+          : `Plan progresji jest generowany w kolejce dla tygodnia ${expectedWeekNumber}`
       }
     });
   } catch (error) {
@@ -661,16 +697,7 @@ WeeklyScheduleController.prototype.generateNewPlan = async function(req, res, ne
 
     logInfo(`Mock schedule created with weekNumber=${mockSchedule.progressTracking.weekNumber}`);
 
-    const trainingPlan = await this.weeklyPlanDeliveryService.generateWeeklyPlan(mockSchedule, true);
-
-    // Zapisz plan do bazy danych
-    if (trainingPlan && trainingPlan._id) {
-      logInfo(`Nowy plan został zapisany z ID: ${trainingPlan._id}`);
-    } else {
-      logError('Plan nie został poprawnie zapisany - brak _id');
-    }
-
-    // Resetuj harmonogram użytkownika do tygodnia 1 dla nowego planu
+    // Resetuj harmonogram użytkownika do tygodnia 1 PRZED generowaniem
     try {
       const WeeklyPlanSchedule = require('../models/weekly-plan-schedule.model');
       const existingSchedule = await WeeklyPlanSchedule.findOne({ userId });
@@ -688,13 +715,27 @@ WeeklyScheduleController.prototype.generateNewPlan = async function(req, res, ne
       // Nie blokuj odpowiedzi jeśli reset się nie udał
     }
 
+    // Dodaj zadanie do kolejki Redis
+    const planData = {
+      resetToWeekOne: true,
+      mockSchedule: mockSchedule
+    };
+    
+    const jobId = await aiJobService.queueWeeklyPlanGeneration(
+      userId,
+      null, // Brak scheduleId dla nowych planów
+      planData,
+      { priority: 4 } // Najwyższy priorytet dla nowych planów
+    );
+
     res.json({
-      status: 'success',
+      status: 'queued',
       data: {
-        trainingPlan,
+        jobId,
         weekNumber: 1,
         isNewPlan: true,
-        message: 'Nowy plan tygodniowy wygenerowany od tygodnia 1'
+        statusUrl: `/api/plans/status/${jobId}`,
+        message: 'Nowy plan tygodniowy jest generowany w kolejce od tygodnia 1'
       }
     });
   } catch (error) {
@@ -745,6 +786,116 @@ WeeklyScheduleController.prototype.deleteAllPlans = async function(req, res, nex
     return res.status(500).json({
       error: 'Wystąpił błąd podczas usuwania wszystkich planów'
     });
+  }
+};
+
+/**
+ * Sprawdza status zadania generowania planu w kolejce Redis
+ */
+WeeklyScheduleController.prototype.getJobStatus = async function(req, res, next) {
+  try {
+    const { jobId } = req.params;
+    const userId = req.user.sub;
+
+    if (!jobId) {
+      return res.status(400).json({
+        status: 'error',
+        error: 'Job ID jest wymagane'
+      });
+    }
+
+    // Pobierz status zadania z kolejki Redis
+    const jobStatus = await aiJobService.getJobStatus(jobId);
+
+    if (!jobStatus) {
+      return res.status(404).json({
+        status: 'error',
+        error: 'Zadanie nie zostało znalezione'
+      });
+    }
+
+    // Sprawdź czy zadanie należy do użytkownika
+    if (jobStatus.data && jobStatus.data.userId !== userId) {
+      return res.status(403).json({
+        status: 'error',
+        error: 'Brak uprawnień do tego zadania'
+      });
+    }
+
+    // Przygotuj odpowiedź z informacjami o statusie
+    const response = {
+      status: 'success',
+      data: {
+        jobId,
+        status: jobStatus.finishedOn ? 'completed' : 
+                jobStatus.failedReason ? 'failed' : 
+                jobStatus.processedOn ? 'processing' : 'waiting',
+        progress: jobStatus.progress || 0,
+        createdAt: new Date(jobStatus.timestamp).toISOString(),
+        message: jobStatus.finishedOn ? 'Plan został wygenerowany' :
+                 jobStatus.failedReason ? `Błąd: ${jobStatus.failedReason}` :
+                 jobStatus.processedOn ? 'Plan jest generowany...' : 'Zadanie oczekuje w kolejce'
+      }
+    };
+
+    // Dodaj informacje o wygenerowanym planie jeśli zakończone
+    if (jobStatus.finishedOn && jobStatus.returnvalue) {
+      response.data.result = {
+        planId: jobStatus.returnvalue.planId,
+        weekNumber: jobStatus.returnvalue.weekNumber
+      };
+    }
+
+    res.json(response);
+
+  } catch (error) {
+    logError('Błąd podczas sprawdzania statusu zadania', error);
+    
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        status: 'error',
+        error: error.message
+      });
+    }
+    
+    return res.status(500).json({
+      status: 'error',
+      error: 'Wystąpił błąd podczas sprawdzania statusu zadania'
+    });
+  }
+};
+
+/**
+ * Server-Sent Events endpoint dla powiadomień w czasie rzeczywistym
+ */
+WeeklyScheduleController.prototype.getNotifications = async function(req, res, next) {
+  try {
+    const userId = req.user.sub;
+
+    if (!userId) {
+      return res.status(401).json({
+        status: 'error',
+        error: 'Użytkownik musi być zalogowany'
+      });
+    }
+
+    logInfo(`SSE connection request from user: ${userId}`);
+
+    // Dodaj połączenie SSE
+    sseNotificationService.addConnection(userId, res);
+
+    // Nie wywołuj res.end() - połączenie powinno pozostać otwarte
+    // Express automatycznie obsłuży zamykanie połączenia
+
+  } catch (error) {
+    logError('Błąd podczas ustanawiania połączenia SSE', error);
+    
+    if (!res.headersSent) {
+      return res.status(500).json({
+        status: 'error',
+        error: 'Wystąpił błąd podczas ustanawiania połączenia z powiadomieniami'
+      });
+    }
   }
 };
 

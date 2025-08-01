@@ -6,6 +6,9 @@ const correctiveExercisesKnowledgeBase = require('../knowledge/corrective-knowle
 const AppError = require('../utils/app-error');
 const { logInfo, logError, logWarning } = require('../utils/logger');
 
+// Mapa locks dla użytkowników aby uniknąć race conditions
+const userLocks = new Map();
+
 /**
  * Serwis odpowiedzialny za cykliczne dostarczanie planów treningowych
  * Generuje plany tygodniowe/dwutygodniowe na podstawie harmonogramów użytkowników
@@ -47,7 +50,7 @@ class WeeklyPlanDeliveryService {
 
       // Oblicz pierwszą datę dostarczania
       schedule.calculateNextDeliveryDate();
-      await schedule.save();
+      await this._saveWithRetry(schedule);
 
       logInfo(`Utworzono harmonogram dostarczania planów dla użytkownika: ${userId}`);
       return schedule;
@@ -88,7 +91,7 @@ class WeeklyPlanDeliveryService {
         schedule.calculateNextDeliveryDate();
       }
 
-      await schedule.save();
+      await this._saveWithRetry(schedule);
       logInfo(`Zaktualizowano harmonogram dostarczania dla użytkownika: ${userId}`);
       return schedule;
     } catch (error) {
@@ -115,7 +118,7 @@ class WeeklyPlanDeliveryService {
       }
 
       schedule.pausedUntil = pauseUntil;
-      await schedule.save();
+      await this._saveWithRetry(schedule);
 
       logInfo(`Wstrzymano harmonogram dostarczania dla użytkownika: ${userId} do ${pauseUntil}`);
       return schedule;
@@ -142,7 +145,7 @@ class WeeklyPlanDeliveryService {
       }
 
       schedule.isActive = false;
-      await schedule.save();
+      await this._saveWithRetry(schedule);
 
       logInfo(`Dezaktywowano harmonogram dostarczania dla użytkownika: ${userId}`);
       return schedule;
@@ -159,7 +162,11 @@ class WeeklyPlanDeliveryService {
    * @returns {Object} Wygenerowany plan treningowy
    */
   async generateWeeklyPlan(schedule, resetToWeekOne = false) {
-    try {
+    const userId = schedule.userId;
+    
+    // Użyj lock aby uniknąć race conditions
+    return await this._withUserLock(userId, async () => {
+      try {
       // Determine the correct week number based on the operation type
       let targetWeekNumber;
       
@@ -374,14 +381,16 @@ class WeeklyPlanDeliveryService {
         }
       }
       
-      await schedule.save();
+        // Retry mechanism dla VersionError
+        await this._saveWithRetry(schedule, 3);
 
-      logInfo(`Wygenerowano plan tygodniowy dla użytkownika ${schedule.userId}, tydzień ${targetWeekNumber}`);
-      return trainingPlan;
-    } catch (error) {
-      logError('Błąd podczas generowania planu tygodniowego', error);
-      throw error;
-    }
+        logInfo(`Wygenerowano plan tygodniowy dla użytkownika ${schedule.userId}, tydzień ${targetWeekNumber}`);
+        return trainingPlan;
+      } catch (error) {
+        logError('Błąd podczas generowania planu tygodniowego', error);
+        throw error;
+      }
+    });
   }
 
   /**
@@ -621,7 +630,9 @@ class WeeklyPlanDeliveryService {
    * @param {Object} progressData - Dane o postępie
    */
   async updateWeeklyProgress(userId, planIdOrWeekNumber, progressData) {
-    try {
+    // Użyj lock aby uniknąć race conditions
+    return await this._withUserLock(userId, async () => {
+      try {
       logInfo(`Aktualizacja postępu dla użytkownika ${userId} z parametrem: ${planIdOrWeekNumber}`);
       
       // Spróbuj znaleźć harmonogram, ale nie wymagaj go
@@ -674,7 +685,7 @@ class WeeklyPlanDeliveryService {
             nextWeekPreference: progressData.nextWeekPreference
           };
           
-          await schedule.save();
+          await this._saveWithRetry(schedule);
           scheduleUpdated = true;
           logInfo(`Zaktualizowano plan w harmonogramie dla użytkownika ${userId}`);
         }
@@ -756,13 +767,14 @@ class WeeklyPlanDeliveryService {
           'Nie znaleziono planu do aktualizacji'
       };
 
-      logInfo(`Rezultat aktualizacji postępu dla użytkownika ${userId}: ${JSON.stringify(result.message)}`);
-      return result;
+        logInfo(`Rezultat aktualizacji postępu dla użytkownika ${userId}: ${JSON.stringify(result.message)}`);
+        return result;
 
-    } catch (error) {
-      logError('Błąd podczas aktualizacji postępu tygodniowego', error);
-      throw error;
-    }
+      } catch (error) {
+        logError('Błąd podczas aktualizacji postępu tygodniowego', error);
+        throw error;
+      }
+    });
   }
 
   /**
@@ -954,7 +966,7 @@ class WeeklyPlanDeliveryService {
             progressionRate: 1.0
           };
           
-          await schedule.save();
+          await this._saveWithRetry(schedule);
           scheduleReset = true;
           logInfo(`Reset schedule for user ${userId} after bulk delete`);
         }
@@ -1058,6 +1070,149 @@ class WeeklyPlanDeliveryService {
     }
 
     return transformedPlan;
+  }
+
+  /**
+   * Uzyskuje lock dla użytkownika aby uniknąć równoczesnych modyfikacji
+   * @param {string} userId - ID użytkownika
+   * @returns {Promise<void>}
+   */
+  async _acquireUserLock(userId) {
+    while (userLocks.has(userId)) {
+      // Czekaj 50ms i spróbuj ponownie
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    userLocks.set(userId, Date.now());
+    logInfo(`Acquired lock for user ${userId}`);
+  }
+
+  /**
+   * Zwalnia lock dla użytkownika
+   * @param {string} userId - ID użytkownika
+   */
+  _releaseUserLock(userId) {
+    userLocks.delete(userId);
+    logInfo(`Released lock for user ${userId}`);
+  }
+
+  /**
+   * Wykonuje operację z lockiem dla użytkownika
+   * @param {string} userId - ID użytkownika
+   * @param {Function} operation - Operacja do wykonania
+   * @returns {Promise<any>} Wynik operacji
+   */
+  async _withUserLock(userId, operation) {
+    await this._acquireUserLock(userId);
+    try {
+      return await operation();
+    } finally {
+      this._releaseUserLock(userId);
+    }
+  }
+
+  /**
+   * Zapisuje dokument z retry mechanism dla VersionError
+   * @param {Object} document - Dokument Mongoose do zapisania
+   * @param {number} maxRetries - Maksymalna liczba prób
+   * @param {number} baseDelay - Bazowe opóźnienie w ms
+   * @returns {Promise<Object>} Zapisany dokument
+   */
+  async _saveWithRetry(document, maxRetries = 3, baseDelay = 100) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Przed zapisem, odśwież dokument z bazy aby mieć najnowszą wersję
+        if (attempt > 1) {
+          // Reload document z bazy danych
+          const freshDoc = await document.model.findById(document._id);
+          if (freshDoc) {
+            // Skopiuj zmiany na świeży dokument
+            freshDoc.recentPlans = document.recentPlans;
+            freshDoc.progressTracking = document.progressTracking;
+            freshDoc.lastDeliveryDate = document.lastDeliveryDate;
+            freshDoc.nextDeliveryDate = document.nextDeliveryDate;
+            
+            return await freshDoc.save();
+          }
+        }
+        
+        const result = await document.save();
+        if (attempt > 1) {
+          logInfo(`Successfully saved document ${document._id} on attempt ${attempt}/${maxRetries}`);
+        }
+        return result;
+        
+      } catch (error) {
+        lastError = error;
+        
+        // Retry tylko dla VersionError
+        if (error.name === 'VersionError' && attempt < maxRetries) {
+          const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
+          logWarning(`VersionError on attempt ${attempt}/${maxRetries} for document ${document._id}, retrying in ${delay}ms...`);
+          
+          // Czekaj przed następną próbą
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        // Dla innych błędów lub jeśli skończyły się próby
+        throw error;
+      }
+    }
+    
+    throw lastError;
+  }
+
+  /**
+   * Atomowa aktualizacja harmonogramu z unikaniem race conditions
+   * @param {string} userId - ID użytkownika  
+   * @param {Object} updateData - Dane do aktualizacji
+   * @returns {Promise<Object>} Zaktualizowany harmonogram
+   */
+  async _atomicScheduleUpdate(userId, updateData) {
+    const maxRetries = 5;
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Użyj findOneAndUpdate z upsert dla atomowej operacji
+        const schedule = await WeeklyPlanSchedule.findOneAndUpdate(
+          { userId, isActive: true },
+          { 
+            $push: updateData.$push || {},
+            $set: updateData.$set || {},
+            $inc: updateData.$inc || {}
+          },
+          { 
+            new: true, 
+            runValidators: true,
+            // Użyj optimistic concurrency control
+            overwrite: false
+          }
+        );
+        
+        if (!schedule) {
+          throw new AppError(`Nie znaleziono aktywnego harmonogramu dla użytkownika ${userId}`, 404);
+        }
+        
+        return schedule;
+        
+      } catch (error) {
+        lastError = error;
+        
+        if ((error.name === 'VersionError' || error.code === 11000) && attempt < maxRetries) {
+          const delay = 100 * Math.pow(2, attempt - 1);
+          logWarning(`Atomic update failed on attempt ${attempt}/${maxRetries}, retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        throw error;
+      }
+    }
+    
+    throw lastError;
   }
 }
 

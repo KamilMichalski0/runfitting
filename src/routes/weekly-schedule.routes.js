@@ -87,4 +87,16 @@ router.post('/new-plan', weeklyScheduleController.generateNewPlan);
  */
 router.delete('/delete-all', weeklyScheduleController.deleteAllPlans);
 
+/**
+ * GET /api/weekly-schedule/job-status/:jobId
+ * Sprawdza status zadania generowania planu w kolejce Redis
+ */
+router.get('/job-status/:jobId', weeklyScheduleController.getJobStatus);
+
+/**
+ * GET /api/weekly-schedule/notifications
+ * Server-Sent Events endpoint dla powiadomień w czasie rzeczywistym
+ */
+router.get('/notifications', weeklyScheduleController.getNotifications);
+
 module.exports = router; 
