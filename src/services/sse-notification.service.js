@@ -173,7 +173,6 @@ class SSENotificationService {
     this.sendNotificationToUser(userId, {
       type: 'plan_generation_completed',
       jobId,
-      message: 'Plan treningowy został wygenerowany pomyślnie',
       data: {
         planId: result.planId,
         weekNumber: result.weekNumber,

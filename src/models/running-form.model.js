@@ -4,7 +4,18 @@ const { Schema } = mongoose;
 const trainingFormSubmissionSchema = new Schema({
   // --- SEKCJA 0: Dane podstawowe ---
   imieNazwisko: { type: String, required: true, trim: true, minlength: 3 },
-  wiek: { type: Number, required: true, min: 12, max: 100 },
+  dateOfBirth: { 
+    type: Date, 
+    required: true,
+    validate: {
+      validator: function(v) {
+        const today = new Date();
+        const age = Math.floor((today - v) / (365.25 * 24 * 60 * 60 * 1000));
+        return v < today && age >= 12 && age <= 100;
+      },
+      message: 'Data urodzenia musi być prawidłowa (wiek między 12 a 100 lat)'
+    }
+  },
   plec: { type: String, required: true, enum: ['Kobieta', 'Mężczyzna', 'Inna'] },
   wzrost: { type: Number, required: true, min: 100, max: 250 },
   masaCiala: { type: Number, required: true, min: 30, max: 300 },
@@ -169,6 +180,21 @@ trainingFormSubmissionSchema.virtual('bmi').get(function() {
     return parseFloat((this.masaCiala / (heightInMeters * heightInMeters)).toFixed(2));
   }
   return null;
+});
+
+// Calculate age dynamically from dateOfBirth
+trainingFormSubmissionSchema.virtual('wiek').get(function() {
+  if (!this.dateOfBirth) return null;
+  const today = new Date();
+  const birthDate = new Date(this.dateOfBirth);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  
+  return age;
 });
 
 // Ensure virtuals are included when converting to JSON

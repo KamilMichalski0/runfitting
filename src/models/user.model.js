@@ -82,10 +82,17 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['male', 'female', 'other']
   },
-  age: {
-    type: Number,
-    min: [15, 'Wiek musi być co najmniej 15 lat'],
-    max: [120, 'Wiek nie może przekraczać 120 lat']
+  dateOfBirth: {
+    type: Date,
+    validate: {
+      validator: function(v) {
+        // Sprawdź czy data urodzenia jest w przeszłości i czy użytkownik ma przynajmniej 15 lat
+        const today = new Date();
+        const age = Math.floor((today - v) / (365.25 * 24 * 60 * 60 * 1000));
+        return v < today && age >= 15 && age <= 120;
+      },
+      message: 'Data urodzenia musi być prawidłowa (wiek między 15 a 120 lat)'
+    }
   },
   weight: {
     type: Number,
@@ -388,6 +395,21 @@ userSchema.virtual('bmi').get(function() {
   // BMI = waga(kg) / (wzrost(m) * wzrost(m))
   const heightInMeters = this.height / 100;
   return (this.weight / (heightInMeters * heightInMeters)).toFixed(2);
+});
+
+// Virtualne pole - wiek obliczany na podstawie daty urodzenia
+userSchema.virtual('age').get(function() {
+  if (!this.dateOfBirth) return null;
+  const today = new Date();
+  const birthDate = new Date(this.dateOfBirth);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  
+  return age;
 });
 
 // Middleware - przed wykonaniem find - nie pokazuj nieaktywnych użytkowników

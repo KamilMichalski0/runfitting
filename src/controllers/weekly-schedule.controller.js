@@ -33,11 +33,70 @@ WeeklyScheduleController.prototype.createSchedule = async function(req, res, nex
     const userId = req.user.sub;
     const scheduleData = req.body;
 
+    // Szczegółowe logowanie na początku
+    logInfo(`Creating schedule for user ${userId}`, {
+      hasUserProfile: !!scheduleData.userProfile,
+      hasDniTreningowe: !!scheduleData.userProfile?.dniTreningowe,
+      hasTrainingDays: !!scheduleData.userProfile?.trainingDays,
+      userProfileKeys: Object.keys(scheduleData.userProfile || {}),
+      dniTreningoweValue: scheduleData.userProfile?.dniTreningowe,
+      trainingDaysValue: scheduleData.userProfile?.trainingDays
+    });
+
     if (!scheduleData.userProfile) {
+      logError(`Missing userProfile in request for user ${userId}`);
       return res.status(400).json({
         error: 'Dane profilu użytkownika są wymagane'
       });
     }
+
+    // Walidacja dni treningowych - to jest krytyczne dla generowania planów
+    if (!scheduleData.userProfile?.dniTreningowe && !scheduleData.userProfile?.trainingDays) {
+      logWarning(`Missing training days in userProfile for user ${userId}`, {
+        userProfile: scheduleData.userProfile,
+        availableKeys: Object.keys(scheduleData.userProfile || {})
+      });
+      
+      // Zwróć błąd walidacji jeśli nie ma dni treningowych
+      return res.status(400).json({
+        error: 'Dni treningowe są wymagane do utworzenia harmonogramu. Proszę określić dniTreningowe lub trainingDays w profilu użytkownika.',
+        details: {
+          missingFields: ['dniTreningowe', 'trainingDays'],
+          receivedFields: Object.keys(scheduleData.userProfile || {})
+        }
+      });
+    }
+
+    // Normalizacja danych - upewnij się że mamy dni treningowe w odpowiednim formacie
+    if (scheduleData.userProfile.trainingDays && !scheduleData.userProfile.dniTreningowe) {
+      scheduleData.userProfile.dniTreningowe = scheduleData.userProfile.trainingDays;
+      logInfo(`Normalized trainingDays to dniTreningowe for user ${userId}`, {
+        trainingDays: scheduleData.userProfile.trainingDays,
+        normalizedTo: scheduleData.userProfile.dniTreningowe
+      });
+    }
+
+    // Walidacja formatu dni treningowych
+    const dniTreningowe = scheduleData.userProfile.dniTreningowe || scheduleData.userProfile.trainingDays;
+    if (!Array.isArray(dniTreningowe) || dniTreningowe.length === 0) {
+      logError(`Invalid training days format for user ${userId}`, {
+        dniTreningowe,
+        type: typeof dniTreningowe,
+        isArray: Array.isArray(dniTreningowe)
+      });
+      return res.status(400).json({
+        error: 'Dni treningowe muszą być niepustą tablicą',
+        details: {
+          received: dniTreningowe,
+          expected: 'Array with at least one training day'
+        }
+      });
+    }
+
+    logInfo(`Validated training days for user ${userId}`, {
+      dniTreningowe: dniTreningowe,
+      count: dniTreningowe.length
+    });
 
     const schedule = await this.weeklyPlanDeliveryService.createSchedule(userId, scheduleData);
 
@@ -66,44 +125,24 @@ WeeklyScheduleController.prototype.getSchedule = async function(req, res, next) 
   try {
     const userId = req.user.sub;
     
-    let schedule = null;
-    let currentPlan = null;
+    console.log(`🔍 [SCHEDULE-CONTROLLER] Getting schedule for user: ${userId}`);
     
-    try {
-      // Próbuj pobrać harmonogram z WeeklySchedule
-      schedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
-      
-      // Wyciągnij aktualny plan z recentPlans jeśli istnieje
-      if (schedule && schedule.recentPlans && schedule.recentPlans.length > 0) {
-        const latestPlan = schedule.recentPlans[0];
-        if (latestPlan && latestPlan.planId) {
-          currentPlan = latestPlan.planId;
-        }
-      }
-    } catch (error) {
-      if (error instanceof AppError && error.statusCode === 404) {
-        logInfo(`No WeeklySchedule found for user ${userId}, will check TrainingPlan directly`);
-        // Harmonogram nie istnieje, sprawdź bezpośrednio w TrainingPlan
-      } else {
-        throw error; // Re-throw inne błędy
+    // Pobierz harmonogram - BEZ fallbacków
+    const schedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
+    
+    // Wyciągnij aktualny plan z recentPlans
+    let currentPlan = null;
+    if (schedule && schedule.recentPlans && schedule.recentPlans.length > 0) {
+      const latestPlan = schedule.recentPlans[0];
+      if (latestPlan && latestPlan.planId) {
+        currentPlan = latestPlan.planId;
+        console.log(`🔍 [SCHEDULE-CONTROLLER] PLAN SOURCE: From harmonogram.recentPlans[0]`);
+        console.log(`🔍 [SCHEDULE-CONTROLLER] Plan ID: ${latestPlan.planId._id}, Week: ${latestPlan.weekNumber}`);
       }
     }
     
-    // Fallback: jeśli nie ma currentPlan z harmonogramu, sprawdź bezpośrednio w TrainingPlan
     if (!currentPlan) {
-      try {
-        const latestTrainingPlan = await TrainingPlan.findOne({
-          userId: userId,
-          planType: 'weekly'
-        }).sort({ createdAt: -1 }).limit(1);
-        
-        if (latestTrainingPlan) {
-          currentPlan = latestTrainingPlan;
-          logInfo(`Found latest training plan directly: ${latestTrainingPlan._id} (week ${latestTrainingPlan.weekNumber})`);
-        }
-      } catch (planError) {
-        logError('Error fetching latest training plan:', planError);
-      }
+      console.log(`🔍 [SCHEDULE-CONTROLLER] PLAN SOURCE: Brak planu w harmonogramie`);
     }
 
     res.json({
@@ -111,11 +150,12 @@ WeeklyScheduleController.prototype.getSchedule = async function(req, res, next) 
       data: {
         schedule,
         currentPlan,
-        pendingReview: null, // TODO: implement if needed
+        pendingReview: null,
         upcomingDelivery: schedule?.nextDeliveryDate || null
       }
     });
   } catch (error) {
+    console.log(`❌ [SCHEDULE-CONTROLLER] Błąd pobierania harmonogramu:`, error.message);
     logError('Błąd pobierania harmonogramu', error);
     
     if (error instanceof AppError) {
@@ -362,22 +402,56 @@ WeeklyScheduleController.prototype.manualDelivery = async function(req, res, nex
       logInfo('Using mock schedule for new plan generation (starting from week 1)');
       expectedWeekNumber = 1;
       
-      // Try to get user profile from existing schedule, or use defaults
+      // Try to get user profile from existing schedule or saved form data
       let userProfile = {
-        name: 'Test User',
+        name: 'User',
         age: 30,
         experienceLevel: 'beginner',
         mainGoal: 'start_running',
         daysPerWeek: 3
       };
       
+      // ZAWSZE próbuj pobrać dane z najnowszego formularza
       try {
-        const existingSchedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
-        if (existingSchedule && existingSchedule.userProfile) {
-          userProfile = { ...userProfile, ...existingSchedule.userProfile };
+        const TrainingFormSubmission = require('../models/running-form.model');
+        // Znajdź najnowszy formularz z wypełnionymi dniami treningowymi
+        const latestForm = await TrainingFormSubmission.findOne({ 
+          userId,
+          dniTreningowe: { $exists: true, $ne: [], $ne: null }
+        }).sort({ createdAt: -1 });
+        
+        if (latestForm) {
+          const formData = latestForm.toObject();
+          logInfo(`=== DEBUG: Pobrano formularz dla użytkownika ${userId} (manual delivery) ===`, {
+            formId: latestForm._id,
+            createdAt: latestForm.createdAt,
+            dniTreningowe: formData.dniTreningowe,
+            allFormFields: Object.keys(formData),
+            imieNazwisko: formData.imieNazwisko,
+            poziomZaawansowania: formData.poziomZaawansowania
+          });
+          
+          const trainingPlanController = require('./training-plan.controller');
+          userProfile = trainingPlanController.mapFormToUserProfile(formData);
+          logInfo(`Using profile from latest form data for user ${userId}: ${userProfile.name}, dni: ${JSON.stringify(userProfile.dniTreningowe)}`);
+        } else {
+          // Fallback: spróbuj istniejący harmonogram tylko gdy brak formularza
+          try {
+            const existingSchedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
+            if (existingSchedule && existingSchedule.userProfile) {
+              userProfile = { ...userProfile, ...existingSchedule.userProfile };
+              logInfo(`No form found - using existing schedule profile for user ${userId}`);
+            } else {
+              logInfo('No saved form data and no existing schedule found');
+            }
+          } catch (scheduleError) {
+            logError('Error fetching existing schedule:', scheduleError);
+            logInfo('Using default profile due to schedule fetch error');
+          }
         }
-      } catch (error) {
-        logInfo('No existing schedule found, using default profile');
+      } catch (formError) {
+        logError('Error fetching form data:', formError);
+        logInfo('Using default profile due to form fetch error');
       }
       
       // Stwórz tymczasowy obiekt schedule dla nowego planu (od tygodnia 1)
@@ -647,7 +721,7 @@ WeeklyScheduleController.prototype.generateNewPlan = async function(req, res, ne
     
     logInfo(`Generating new plan for user ${userId} starting from week 1`);
 
-    // Spróbuj pobrać dane użytkownika z istniejącego harmonogramu
+    // Spróbuj pobrać dane użytkownika z istniejącego harmonogramu lub formularza
     let userProfile = {
       name: 'User',
       age: 30,
@@ -656,74 +730,146 @@ WeeklyScheduleController.prototype.generateNewPlan = async function(req, res, ne
       daysPerWeek: 3
     };
     
+    // ZAWSZE próbuj pobrać dane z najnowszego formularza
     try {
-      const existingSchedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
-      if (existingSchedule && existingSchedule.userProfile) {
-        userProfile = { ...userProfile, ...existingSchedule.userProfile };
-        logInfo(`Using existing user profile for new plan: ${JSON.stringify(userProfile)}`);
+      const TrainingFormSubmission = require('../models/running-form.model');
+      // Znajdź najnowszy formularz z wypełnionymi dniami treningowymi
+      const latestForm = await TrainingFormSubmission.findOne({ 
+        userId,
+        dniTreningowe: { $exists: true, $ne: [], $ne: null }
+      }).sort({ createdAt: -1 });
+      
+      if (latestForm) {
+        const formData = latestForm.toObject();
+        logInfo(`=== DEBUG: Pobrano formularz dla użytkownika ${userId} ===`, {
+          formId: latestForm._id,
+          createdAt: latestForm.createdAt,
+          dniTreningowe: formData.dniTreningowe,
+          allFormFields: Object.keys(formData),
+          imieNazwisko: formData.imieNazwisko,
+          poziomZaawansowania: formData.poziomZaawansowania
+        });
+        
+        const trainingPlanController = require('./training-plan.controller');
+        userProfile = trainingPlanController.mapFormToUserProfile(formData);
+        logInfo(`Using profile from latest form data for new plan: ${userProfile.name}, dni: ${JSON.stringify(userProfile.dniTreningowe)}`);
+      } else {
+        // Fallback: spróbuj istniejący harmonogram tylko gdy brak formularza
+        try {
+          const existingSchedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
+          if (existingSchedule && existingSchedule.userProfile) {
+            userProfile = { ...userProfile, ...existingSchedule.userProfile };
+            logInfo(`No form found - using existing schedule profile: ${JSON.stringify(userProfile)}`);
+          } else {
+            logInfo('No saved form data and no existing schedule found - cannot generate plan');
+            return res.status(400).json({
+              status: 'error',
+              error: 'Brak danych formularza biegowego. Proszę najpierw wypełnić formularz.',
+              details: 'Nie znaleziono zapisanego formularza ani harmonogramu dla tego użytkownika.'
+            });
+          }
+        } catch (scheduleError) {
+          logError('Error fetching existing schedule:', scheduleError);
+          return res.status(400).json({
+            status: 'error',
+            error: 'Brak danych formularza biegowego. Proszę najpierw wypełnić formularz.',
+            details: 'Nie można pobrać danych użytkownika.'
+          });
+        }
       }
-    } catch (error) {
-      logInfo(`No existing schedule found, using default profile for new plan`);
+    } catch (formError) {
+      logError('Error fetching form data for new plan:', formError);
+      return res.status(500).json({
+        status: 'error',
+        error: 'Błąd podczas pobierania danych formularza',
+        details: formError.message
+      });
     }
 
-    // Użyj mock schedule dla nowych planów (z danymi użytkownika jeśli dostępne)
-    const mockSchedule = {
-      userId: userId,
-      userProfile: userProfile,
-      progressTracking: {
-        weekNumber: 1,
-        currentPhase: 'base',
-        totalWeeksDelivered: 0,
-        lastWeeklyDistance: 0,
-        progressionRate: 1.0
-      },
-      longTermGoal: 'general_fitness',
-      deliveryFrequency: 'weekly',
-      adaptationSettings: {
-        autoAdjust: true
-      },
-      recentPlans: [],
-      _id: `new-plan-${Date.now()}`,
+    
+    // Walidacja dni treningowych - BEZ fallbacków
+    const hasTrainingDays = userProfile?.dniTreningowe && userProfile.dniTreningowe.length > 0;
+    const hasTrainingDaysEn = userProfile?.trainingDays && userProfile.trainingDays.length > 0;
+    
+    if (!hasTrainingDays && !hasTrainingDaysEn) {
+      logError(`User ${userId} nie ma określonych dni treningowych`, {
+        userProfile_dniTreningowe: userProfile?.dniTreningowe,
+        userProfile_trainingDays: userProfile?.trainingDays
+      });
       
-      // Mockowe metody
-      updateProgress: function() {
-        // Nie aktualizuj weekNumber dla nowych planów
-        logInfo('Mock updateProgress called - not updating weekNumber for new plan');
-      },
-      save: async function() {
-        return Promise.resolve(this);
-      }
-    };
+      return res.status(400).json({
+        status: 'error',
+        error: 'Brak dni treningowych. Musisz określić dni treningowe w swoim profilu aby wygenerować plan.',
+        details: 'Przejdź do ustawień profilu i wybierz dni treningowe.'
+      });
+    }
 
-    logInfo(`Mock schedule created with weekNumber=${mockSchedule.progressTracking.weekNumber}`);
-
-    // Resetuj harmonogram użytkownika do tygodnia 1 PRZED generowaniem
+    // Utwórz lub zaktualizuj prawdziwy harmonogram dla nowego planu
+    let schedule;
     try {
       const WeeklyPlanSchedule = require('../models/weekly-plan-schedule.model');
       const existingSchedule = await WeeklyPlanSchedule.findOne({ userId });
       
       if (existingSchedule) {
+        // Zaktualizuj istniejący harmonogram - resetuj do tygodnia 1
+        existingSchedule.userProfile = userProfile; // Zaktualizuj profil użytkownika
         existingSchedule.progressTracking.weekNumber = 1;
         existingSchedule.progressTracking.currentPhase = 'base';
         existingSchedule.progressTracking.totalWeeksDelivered = 0;
+        existingSchedule.progressTracking.lastWeeklyDistance = 0;
+        existingSchedule.progressTracking.progressionRate = 1.0;
         existingSchedule.recentPlans = []; // Wyczyść poprzednie plany
-        await existingSchedule.save();
-        logInfo(`Zresetowano harmonogram użytkownika ${userId} do tygodnia 1`);
+        existingSchedule.isActive = true;
+        existingSchedule.nextDeliveryDate = new Date();
+        
+        schedule = await existingSchedule.save();
+        logInfo(`Zresetowano istniejący harmonogram użytkownika ${userId} do tygodnia 1`);
+      } else {
+        // Utwórz nowy harmonogram
+        schedule = new WeeklyPlanSchedule({
+          userId: userId,
+          userProfile: userProfile,
+          progressTracking: {
+            weekNumber: 1,
+            currentPhase: 'base',
+            totalWeeksDelivered: 0,
+            lastWeeklyDistance: 0,
+            progressionRate: 1.0
+          },
+          longTermGoal: 'general_fitness',
+          deliveryFrequency: 'weekly',
+          adaptationSettings: {
+            autoAdjust: true
+          },
+          recentPlans: [],
+          isActive: true,
+          nextDeliveryDate: new Date(),
+          createdAt: new Date()
+        });
+        
+        schedule = await schedule.save();
+        logInfo(`Utworzono nowy harmonogram dla użytkownika ${userId} z tygodniem 1`);
       }
-    } catch (resetError) {
-      logError('Błąd podczas resetowania harmonogramu:', resetError);
-      // Nie blokuj odpowiedzi jeśli reset się nie udał
+    } catch (scheduleError) {
+      logError('Błąd podczas tworzenia/aktualizacji harmonogramu:', scheduleError);
+      throw new AppError('Nie udało się przygotować harmonogramu dla nowego planu', 500);
     }
+
+    logInfo(`Harmonogram przygotowany dla nowego planu`, {
+      scheduleId: schedule._id,
+      weekNumber: schedule.progressTracking.weekNumber,
+      dniTreningowe: schedule.userProfile.dniTreningowe,
+      trainingDays: schedule.userProfile.trainingDays
+    });
 
     // Dodaj zadanie do kolejki Redis
     const planData = {
-      resetToWeekOne: true,
-      mockSchedule: mockSchedule
+      resetToWeekOne: true
     };
     
     const jobId = await aiJobService.queueWeeklyPlanGeneration(
       userId,
-      null, // Brak scheduleId dla nowych planów
+      schedule._id, // Użyj prawdziwego ID harmonogramu
       planData,
       { priority: 4 } // Najwyższy priorytet dla nowych planów
     );
@@ -827,14 +973,15 @@ WeeklyScheduleController.prototype.getJobStatus = async function(req, res, next)
       status: 'success',
       data: {
         jobId,
-        status: jobStatus.finishedOn ? 'completed' : 
+        status: jobStatus.status || (jobStatus.finishedOn ? 'completed' : 
                 jobStatus.failedReason ? 'failed' : 
-                jobStatus.processedOn ? 'processing' : 'waiting',
+                jobStatus.processedOn ? 'processing' : 'waiting'),
         progress: jobStatus.progress || 0,
-        createdAt: new Date(jobStatus.timestamp).toISOString(),
-        message: jobStatus.finishedOn ? 'Plan został wygenerowany' :
-                 jobStatus.failedReason ? `Błąd: ${jobStatus.failedReason}` :
-                 jobStatus.processedOn ? 'Plan jest generowany...' : 'Zadanie oczekuje w kolejce'
+        createdAt: jobStatus.createdAt ? jobStatus.createdAt.toISOString() : new Date(jobStatus.timestamp || Date.now()).toISOString(),
+        message: jobStatus.status === 'completed' ? 'Plan został wygenerowany' :
+                 jobStatus.status === 'failed' ? `Błąd: ${jobStatus.failedReason || 'Unknown error'}` :
+                 jobStatus.status === 'processing' ? 'Plan jest generowany...' : 'Zadanie oczekuje w kolejce',
+        result: jobStatus.result || null
       }
     };
 

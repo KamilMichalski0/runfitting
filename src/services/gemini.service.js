@@ -1,7 +1,6 @@
 const axios = require('axios');
 const geminiConfig = require('../config/gemini.config'); 
-const openaiConfig = require('../config/openai.config'); 
-const { OpenAI } = require('openai'); 
+ 
 const AppError = require('../utils/app-error');
 const config = require('../config/gemini.config');
 const { getExamplePlanTemplate, selectRandomizedPlanTemplate } = require('../templates/plan-template-selector');
@@ -31,23 +30,10 @@ class GeminiService {
       responseMimeType: 'application/json',
     };
 
-    // Check Gemini API key and set preference
+    // Check Gemini API key - required for operation
     this.isGemini = !!this.geminiApiKey;
     if (!this.geminiApiKey) {
-      console.warn('⚠️  WARNING: GEMINI_API_KEY is not set. GeminiService will attempt OpenAI fallback or use default responses.');
-    }
-
-    // Initialize OpenAI client
-    this.openaiApiKey = openaiConfig.apiKey;
-    if (!this.openaiApiKey) {
-      console.warn('⚠️  WARNING: OPENAI_API_KEY is not set. OpenAI fallback will not be available.');
-      this.openai = null;
-    } else {
-      this.openai = new OpenAI({ apiKey: this.openaiApiKey });
-      this.openaiModel = openaiConfig.model;
-      this.openaiTemperature = openaiConfig.temperature;
-      this.openaiMaxTokens = openaiConfig.maxTokens;
-      this.openaiTopP = openaiConfig.topP;
+      throw new Error('GEMINI_API_KEY is required. This service uses only Gemini AI.');
     }
 
     // Initialize Axios for Gemini
@@ -63,7 +49,7 @@ class GeminiService {
     // Bind methods
     this._createPrompt = this._createPrompt.bind(this);
     this._parseResponse = this._parseResponse.bind(this); 
-        // REMOVED: OpenAI and emergency fallback methods bindings - no longer needed 
+ 
     this._generateCorrectiveExercises = this._generateCorrectiveExercises.bind(this);
     this._createCorrectiveExercisesPrompt = this._createCorrectiveExercisesPrompt.bind(this);
 
@@ -1020,7 +1006,7 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
         throw new AppError('Błąd podczas przetwarzania odpowiedzi z Gemini API: ' + error.message, 500);
       }
       
-      // Ulepszona walidacja i naprawa planu
+      // Ulepszona walidacja i naprawa planu (bez trainingDays w _parseResponse)
       plan = this._validateAndRepairPlan(plan);
       
       // Diversity checking is now handled in parseWeeklyPlanResponse for weekly plans
@@ -1163,10 +1149,10 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
           plan.plan_weeks = weeksArray;
         } catch (e) {
           // Użyj domyślnego planu jeśli nie udało się sparsować
-          plan.plan_weeks = this._createDefaultWeeks();
+          plan.plan_weeks = this._createDefaultWeeks(trainingDays);
         }
       } else {
-        plan.plan_weeks = this._createDefaultWeeks();
+        plan.plan_weeks = this._createDefaultWeeks(trainingDays);
       }
       
       return plan;
@@ -1192,27 +1178,10 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
    * Tworzy domyślne tygodnie planu
    * @returns {Array} - Tablica tygodni
    */
-  _createDefaultWeeks() {
+  _createDefaultWeeks(trainingDays = null) {
     const weeks = [];
     for (let i = 1; i <= 6; i++) {
-      weeks.push({
-        week_num: i,
-        focus: i <= 2 ? "Budowanie bazy" : i <= 4 ? "Rozwój wytrzymałości" : "Intensyfikacja",
-        days: [
-          {
-            day_name: "poniedziałek",
-            date: new Date(Date.now() + (i-1) * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            workout: {
-              type: "easy_run",
-              description: "Łagodny bieg budujący bazę wytrzymałościową",
-              distance: 3 + i * 0.5,
-              duration: 25 + i * 5,
-              target_heart_rate: { min: 120, max: 150, zone: "Strefa 2" },
-              support_exercises: []
-            }
-          }
-        ]
-      });
+      weeks.push(this._createDefaultWeek(i, trainingDays));
     }
     return weeks;
   }
@@ -1222,7 +1191,7 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
    * @param {Object} plan - Plan do walidacji
    * @returns {Object} - Naprawiony plan
    */
-  _validateAndRepairPlan(plan) {
+  _validateAndRepairPlan(plan, trainingDays = null) {
     if (!plan || typeof plan !== 'object') {
       throw new Error('Plan nie jest prawidłowym obiektem');
     }
@@ -1245,29 +1214,71 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
 
     if (!plan.plan_weeks || !Array.isArray(plan.plan_weeks)) {
       console.error('Brakujące lub nieprawidłowe plan_weeks, tworzenie domyślnych');
-      plan.plan_weeks = this._createDefaultWeeks();
+      plan.plan_weeks = this._createDefaultWeeks(trainingDays);
     }
 
-    // Walidacja i naprawa tygodni
-    plan.plan_weeks = plan.plan_weeks.map((week, index) => {
-      if (!week || typeof week !== 'object') {
-        return this._createDefaultWeek(index + 1);
-      }
-
-      if (!week.week_num) week.week_num = index + 1;
-      if (!week.focus) week.focus = "Trening ogólnorozwojowy";
+    // 🔧 KRYTYCZNA NAPRAWA: Walidacja i korekta dni treningowych w odpowiedzi AI
+    if (trainingDays && Array.isArray(trainingDays) && trainingDays.length > 0) {
+      this.log(`🔧 NAPRAWA PLANU: Wymuszanie dni treningowych użytkownika: ${trainingDays.join(', ')}`);
       
-      if (!week.days || !Array.isArray(week.days)) {
-        week.days = this._createDefaultDays(index + 1);
-      } else {
-        // Walidacja dni
-        week.days = week.days.map((day, dayIndex) => {
-          return this._validateAndRepairDay(day, dayIndex, index + 1);
-        });
-      }
+      plan.plan_weeks = plan.plan_weeks.map((week, index) => {
+        if (!week || typeof week !== 'object') {
+          return this._createDefaultWeek(index + 1, trainingDays);
+        }
 
-      return week;
-    });
+        if (!week.week_num) week.week_num = index + 1;
+        if (!week.focus) week.focus = "Trening ogólnorozwojowy";
+        
+        if (!week.days || !Array.isArray(week.days)) {
+          week.days = this._createDefaultDays(index + 1, trainingDays);
+        } else {
+          // 🚨 GŁÓWNA NAPRAWA: Wymień dni AI na dni użytkownika
+          const correctedDays = week.days.map((day, dayIndex) => {
+            if (dayIndex < trainingDays.length) {
+              const correctedDay = { ...day };
+              const originalDayName = day.day_name;
+              correctedDay.day_name = trainingDays[dayIndex];
+              
+              // Loguj poprawki
+              if (originalDayName !== trainingDays[dayIndex]) {
+                this.log(`🔧 NAPRAWA: Zmieniono dzień '${originalDayName}' na '${trainingDays[dayIndex]}'`);
+              }
+              
+              return this._validateAndRepairDay(correctedDay, dayIndex, index + 1, trainingDays);
+            }
+            return this._validateAndRepairDay(day, dayIndex, index + 1, trainingDays);
+          });
+          
+          // Zachowaj tylko tyle dni ile użytkownik ma treningowych
+          week.days = correctedDays.slice(0, trainingDays.length);
+          
+          this.log(`✅ Tydzień ${week.week_num}: wymuszono dni ${week.days.map(d => d.day_name).join(', ')}`);
+        }
+
+        return week;
+      });
+    } else {
+      // Fallback do starej logiki gdy brak trainingDays
+      plan.plan_weeks = plan.plan_weeks.map((week, index) => {
+        if (!week || typeof week !== 'object') {
+          return this._createDefaultWeek(index + 1, trainingDays);
+        }
+
+        if (!week.week_num) week.week_num = index + 1;
+        if (!week.focus) week.focus = "Trening ogólnorozwojowy";
+        
+        if (!week.days || !Array.isArray(week.days)) {
+          week.days = this._createDefaultDays(index + 1, trainingDays);
+        } else {
+          // Walidacja dni
+          week.days = week.days.map((day, dayIndex) => {
+            return this._validateAndRepairDay(day, dayIndex, index + 1, trainingDays);
+          });
+        }
+
+        return week;
+      });
+    }
 
     // Dodanie brakujących sekcji
     if (!plan.corrective_exercises) {
@@ -1297,7 +1308,7 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
         
         // Dostosuj liczbę tygodni jeśli potrzeba
         if (plan.plan_weeks.length !== expectedDuration) {
-          plan.plan_weeks = this._adjustWeeksCount(plan.plan_weeks, expectedDuration);
+          plan.plan_weeks = this._adjustWeeksCount(plan.plan_weeks, expectedDuration, trainingDays);
         }
       }
     }
@@ -1310,17 +1321,24 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
    * Waliduje i naprawia dzień treningowy
    * @param {Object} day - Dzień do walidacji
    * @param {number} dayIndex - Indeks dnia
+   * @param {number} weekNumber - Numer tygodnia
+   * @param {Array} trainingDays - Dni treningowe użytkownika (opcjonalne)
    * @returns {Object} - Naprawiony dzień
    */
-  _validateAndRepairDay(day, dayIndex, weekNumber = 1) {
-    const defaultDays = ['poniedziałek', 'środa', 'piątek', 'niedziela', 'wtorek', 'czwartek', 'sobota'];
+  _validateAndRepairDay(day, dayIndex, weekNumber = 1, trainingDays = null) {
+    // Użyj dni treningowych użytkownika jeśli dostępne, inaczej fallback
+    const daysToUse = trainingDays && Array.isArray(trainingDays) && trainingDays.length > 0 
+      ? trainingDays 
+      : ['poniedziałek', 'środa', 'piątek', 'niedziela', 'wtorek', 'czwartek', 'sobota'];
     
     if (!day || typeof day !== 'object') {
-      return this._createDefaultDay(defaultDays[dayIndex % defaultDays.length], weekNumber, dayIndex);
+      const dayName = dayIndex < daysToUse.length ? daysToUse[dayIndex] : daysToUse[dayIndex % daysToUse.length];
+      return this._createDefaultDay(dayName, weekNumber, dayIndex);
     }
 
+    // Jeśli nie ma day_name lub jest nieprawidłowy, przypisz z dni użytkownika
     if (!day.day_name) {
-      day.day_name = defaultDays[dayIndex % defaultDays.length];
+      day.day_name = dayIndex < daysToUse.length ? daysToUse[dayIndex] : daysToUse[dayIndex % daysToUse.length];
     }
 
     if (!day.date) {
@@ -1523,7 +1541,7 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
    * @param {number} targetCount - Docelowa liczba tygodni
    * @returns {Array} - Dostosowane tygodnie
    */
-  _adjustWeeksCount(weeks, targetCount) {
+  _adjustWeeksCount(weeks, targetCount, trainingDays = null) {
     if (weeks.length === targetCount) return weeks;
     
     if (weeks.length > targetCount) {
@@ -1531,7 +1549,7 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
     } else {
       const newWeeks = [...weeks];
       for (let i = weeks.length + 1; i <= targetCount; i++) {
-        newWeeks.push(this._createDefaultWeek(i));
+        newWeeks.push(this._createDefaultWeek(i, trainingDays));
       }
       return newWeeks;
     }
@@ -1542,11 +1560,11 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
    * @param {number} weekNum - Numer tygodnia
    * @returns {Object} - Domyślny tydzień
    */
-  _createDefaultWeek(weekNum) {
+  _createDefaultWeek(weekNum, trainingDays = null) {
     return {
       week_num: weekNum,
       focus: weekNum <= 2 ? "Budowanie bazy" : weekNum <= 4 ? "Rozwój wytrzymałości" : "Intensyfikacja",
-      days: this._createDefaultDays(weekNum)
+      days: this._createDefaultDays(weekNum, trainingDays)
     };
   }
 
@@ -1555,14 +1573,18 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
    * @param {number} weekNum - Numer tygodnia
    * @returns {Array} - Tablica dni
    */
-  _createDefaultDays(weekNum) {
-    const defaultDays = ['poniedziałek', 'środa', 'piątek'];
+  _createDefaultDays(weekNum, trainingDays = null) {
+    const defaultDays = trainingDays && trainingDays.length > 0 ? trainingDays : ['poniedziałek', 'środa', 'piątek'];
     
     // Mapowanie nazw dni na indeksy tygodnia dla lepszej różnorodności
     const dayNameToIndex = {
       'poniedziałek': 0, // Poniedziałek
+      'wtorek': 1,       // Wtorek
       'środa': 2,        // Środa  
-      'piątek': 4        // Piątek
+      'czwartek': 3,     // Czwartek
+      'piątek': 4,       // Piątek
+      'sobota': 5,       // Sobota
+      'niedziela': 6     // Niedziela
     };
     
     return defaultDays.map((dayName, index) => {
@@ -1591,12 +1613,6 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
 
 
 
-  // Nowa metoda do generowania planu przy użyciu OpenAI
-  // REMOVED: _generatePlanWithOpenAI - no longer needed, only Gemini is used
-
-  // REMOVED: _parseOpenAIResponse - no longer needed, only Gemini is used
-
-  // REMOVED: _createDefaultTrainingPlan - no longer needed, only Gemini is used
 
   // Placeholder for the new method to generate corrective exercises
   async _generateCorrectiveExercises(userData, correctiveKnowledge) {
@@ -1756,10 +1772,53 @@ Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON mu
    * @returns {Object} Plan tygodniowy
    */
   async generateWeeklyTrainingPlan(weeklyData) {
+    // DEBUG: Loguj kompletne dane otrzymane w Gemini Service
+    this.log('=== GEMINI SERVICE: Otrzymane dane weeklyData ===', {
+      weeklyData_keys: Object.keys(weeklyData),
+      dniTreningowe: weeklyData.dniTreningowe,
+      trainingDays: weeklyData.trainingDays,
+      userData: weeklyData.userData ? Object.keys(weeklyData.userData) : null,
+      userData_dniTreningowe: weeklyData.userData?.dniTreningowe,
+      userData_trainingDays: weeklyData.userData?.trainingDays,
+      weekNumber: weeklyData.weekNumber,
+      userId: weeklyData.userId,
+      // Dodatkowe informacje z formularza
+      imie: weeklyData.imie,
+      poziomZaawansowania: weeklyData.poziomZaawansowania,
+      glownyCel: weeklyData.glownyCel,
+      // Sprawdź czy są podstawowe dane formularza
+      hasBasicFormData: !!(weeklyData.imie && weeklyData.poziomZaawansowania && weeklyData.glownyCel)
+    });
+    
     // Sprawdź czy Gemini API jest skonfigurowane
     if (!this.geminiApiKey) {
       throw new AppError('Gemini API nie jest skonfigurowane. Skontaktuj się z administratorem.', 500);
     }
+
+    // KRYTYCZNA WALIDACJA dni treningowych na poziomie AI Service
+    const trainingDays = weeklyData.dniTreningowe || weeklyData.trainingDays || weeklyData.userData?.dniTreningowe || weeklyData.userData?.trainingDays;
+    if (!trainingDays || !Array.isArray(trainingDays) || trainingDays.length === 0) {
+      this.error('CRITICAL AI INPUT VALIDATION FAILED: No training days provided to Gemini Service', {
+        weeklyData_keys: Object.keys(weeklyData),
+        dniTreningowe: weeklyData.dniTreningowe,
+        trainingDays: weeklyData.trainingDays,
+        userData_dniTreningowe: weeklyData.userData?.dniTreningowe,
+        userData_trainingDays: weeklyData.userData?.trainingDays,
+        weekNumber: weeklyData.weekNumber,
+        userId: weeklyData.userId
+      });
+      
+      throw new AppError(
+        'Brak dni treningowych w danych przekazanych do generatora AI. Nie można wygenerować planu treningowego bez określenia dni treningowych.', 
+        400
+      );
+    }
+
+    this.log(`AI Service: Training days validation passed`, {
+      trainingDays: trainingDays,
+      daysCount: trainingDays.length,
+      weekNumber: weeklyData.weekNumber
+    });
 
     // Konfiguracja retry
     const maxRetries = 3;
@@ -1771,6 +1830,12 @@ Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON mu
         this.log(`\n--- PRÓBA ${attempt}/${maxRetries} WYGENEROWANIA PLANU TYGODNIOWEGO PRZEZ GEMINI ---`);
         
         const prompt = this.prepareWeeklyPlanPrompt(weeklyData);
+        
+        // Pełne logowanie promptu dla debugowania
+        this.log(`\n=== PEŁNY PROMPT WYSYŁANY DO GEMINI ===`);
+        this.log(prompt);
+        this.log(`=== KONIEC PROMPTU ===\n`);
+        
         const requestUrl = `${this.geminiApiUrl}/v1beta/models/${this.geminiModel}:generateContent?key=${this.geminiApiKey}`;
         
         const requestBody = {
@@ -1805,6 +1870,12 @@ Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON mu
         });
 
         this.log('Otrzymano odpowiedź z Gemini API dla planu tygodniowego.');
+        
+        // Loguj surową odpowiedź z Gemini
+        this.log(`\n=== SUROWA ODPOWIEDŹ Z GEMINI ===`);
+        this.log(JSON.stringify(response.data, null, 2));
+        this.log(`=== KONIEC ODPOWIEDZI ===\n`);
+        
         const plan = await this.parseWeeklyPlanResponse(response, weeklyData);
         
         // Próbuj zastosować spersonalizowane strefy tętna do planu
@@ -1854,6 +1925,9 @@ Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON mu
   prepareWeeklyPlanPrompt(weeklyData) {
     const contextInfo = this.buildWeeklyContext(weeklyData);
     
+    // Pobierz dni treningowe z różnych możliwych miejsc
+    const trainingDays = weeklyData.dniTreningowe || weeklyData.trainingDays || weeklyData.userData?.dniTreningowe || weeklyData.userData?.trainingDays;
+    
     return `Wygeneruj plan treningowy na ${weeklyData.deliveryFrequency === 'biweekly' ? '2 tygodnie' : '1 tydzień'} dla biegacza na podstawie poniższych danych:
 
 ${contextInfo}
@@ -1864,6 +1938,7 @@ WAŻNE WYMAGANIA:
 3. Poprzednia realizacja planów: ${weeklyData.recentPerformance.averageCompletion * 100}%
 4. Trend wydajności: ${weeklyData.recentPerformance.trend}
 5. Rekomendacja progresji: ${weeklyData.recentPerformance.recommendation}
+${(trainingDays && trainingDays.length > 0) ? `6. UŻYJ DOKŁADNIE TYCH DNI TRENINGOWYCH: ${trainingDays.join(', ')} - nie zmieniaj dni na inne!` : ''}
 
 DOSTOSOWANIA:
 - Jeśli realizacja była niska (<60%), zmniejsz intensywność i objętość
@@ -1981,13 +2056,35 @@ Pamiętaj o dostosowaniu planu do:
    * @returns {string} Kontekst
    */
   buildWeeklyContext(weeklyData) {
+    // DEBUG: Sprawdź jakie dni treningowe są dostępne
+    console.log('🔍 DEBUG buildWeeklyContext - weeklyData.dniTreningowe:', weeklyData.dniTreningowe);
+    console.log('🔍 DEBUG buildWeeklyContext - wszystkie klucze weeklyData:', Object.keys(weeklyData));
+    
     let context = `PROFIL BIEGACZA:
 - Imię: ${weeklyData.name}
 - Wiek: ${weeklyData.age} lat
 - Poziom: ${weeklyData.level}
 - Cel: ${weeklyData.goal}
-- Dni treningowe w tygodniu: ${weeklyData.daysPerWeek}
-- Aktualny tygodniowy dystans: ${weeklyData.weeklyDistance} km
+- Dni treningowe w tygodniu: ${weeklyData.daysPerWeek}`;
+
+    // Dodaj konkretne dni treningowe jeśli są dostępne
+    // Sprawdź różne możliwe nazwy pól
+    console.log('🔍 DEBUG Gemini buildWeeklyContext - weeklyData.dniTreningowe:', weeklyData.dniTreningowe);
+    console.log('🔍 DEBUG Gemini buildWeeklyContext - weeklyData.trainingDays:', weeklyData.trainingDays);
+    console.log('🔍 DEBUG Gemini buildWeeklyContext - weeklyData.userData?.dniTreningowe:', weeklyData.userData?.dniTreningowe);
+    console.log('🔍 DEBUG Gemini buildWeeklyContext - weeklyData.userData?.trainingDays:', weeklyData.userData?.trainingDays);
+    
+    const trainingDays = weeklyData.dniTreningowe || weeklyData.trainingDays || weeklyData.userData?.dniTreningowe || weeklyData.userData?.trainingDays;
+    console.log('🔍 DEBUG Gemini buildWeeklyContext - final trainingDays:', trainingDays);
+    
+    if (trainingDays && Array.isArray(trainingDays) && trainingDays.length > 0) {
+      context += `\n- Wybrane dni treningowe: ${trainingDays.join(', ')}`;
+      console.log('✅ DEBUG Gemini: Dodano dni treningowe do kontekstu:', trainingDays.join(', '));
+    } else {
+      console.log('❌ DEBUG Gemini: Brak dni treningowych, użyje domyślnych');
+    }
+
+    context += `\n- Aktualny tygodniowy dystans: ${weeklyData.weeklyDistance} km
 - Kontuzje: ${weeklyData.hasInjuries ? 'Tak' : 'Nie'}`;
 
     if (weeklyData.heartRate) {
@@ -2029,7 +2126,22 @@ Pamiętaj o dostosowaniu planu do:
   parseWeeklyPlanResponse(response, weeklyData) {
     try {
       // Parsuj odpowiedź z Gemini API
-      const planData = this._parseResponse(response.data);
+      let planData = this._parseResponse(response.data);
+
+      // Wyciągnij dni treningowe z weeklyData i przekaż do walidacji
+      const trainingDays = weeklyData.dniTreningowe || weeklyData.trainingDays || weeklyData.userData?.dniTreningowe || weeklyData.userData?.trainingDays;
+      
+      this.log(`\n=== PRZED WALIDACJĄ I NAPRAWĄ ===`);
+      this.log('Dni treningowe do użycia:', trainingDays);
+      this.log('Plan przed naprawą - dni z pierwszego tygodnia:', planData?.plan_weeks?.[0]?.days?.map(d => d.day_name));
+      this.log(`================================\n`);
+      
+      // Ulepszona walidacja i naprawa planu z rzeczywistymi dniami treningowymi
+      planData = this._validateAndRepairPlan(planData, trainingDays);
+      
+      this.log(`\n=== PO WALIDACJI I NAPRAWIE ===`);
+      this.log('Plan po naprawie - dni z pierwszego tygodnia:', planData?.plan_weeks?.[0]?.days?.map(d => d.day_name));
+      this.log(`===============================\n`);
 
       // Sprawdź różnorodność planu PRZED finalizacją
       if (planData.plan_weeks && planData.plan_weeks.length > 0) {

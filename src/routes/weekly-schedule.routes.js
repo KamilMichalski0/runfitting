@@ -94,6 +94,73 @@ router.delete('/delete-all', weeklyScheduleController.deleteAllPlans);
 router.get('/job-status/:jobId', weeklyScheduleController.getJobStatus);
 
 /**
+ * POST /api/weekly-schedule/test-job
+ * Test endpoint for debugging job processing
+ */
+router.post('/test-job', async (req, res) => {
+  try {
+    const aiJobService = require('../services/ai-job.service');
+    const jobId = await aiJobService.testWeeklyPlanGeneration();
+    res.json({ 
+      status: 'success', 
+      data: { 
+        testJobId: jobId,
+        message: 'Test job created - check console logs for processing status'
+      }
+    });
+  } catch (error) {
+    console.error('Test job error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * GET /api/weekly-schedule/debug-queue
+ * Debug endpoint to check queue status
+ */
+router.get('/debug-queue', async (req, res) => {
+  try {
+    const aiJobService = require('../services/ai-job.service');
+    await aiJobService.debugQueueStatus();
+    res.json({ 
+      status: 'success', 
+      message: 'Queue status logged to console'
+    });
+  } catch (error) {
+    console.error('Debug queue error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * POST /api/weekly-schedule/force-process
+ * Force process waiting jobs manually
+ */
+router.post('/force-process', async (req, res) => {
+  try {
+    const aiJobService = require('../services/ai-job.service');
+    const result = await aiJobService.forceProcessWaitingJobs();
+    res.json({ 
+      status: 'success', 
+      data: result,
+      message: 'Manual job processing attempted - check console logs'
+    });
+  } catch (error) {
+    console.error('Force process error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      error: error.message 
+    });
+  }
+});
+
+/**
  * GET /api/weekly-schedule/notifications
  * Server-Sent Events endpoint dla powiadomień w czasie rzeczywistym
  */

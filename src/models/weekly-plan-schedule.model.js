@@ -49,7 +49,28 @@ const weeklyPlanScheduleSchema = new mongoose.Schema({
       default: false
     },
     heartRate: Number,
-    description: String
+    description: String,
+    // Konkretne dni treningowe - KRYTYCZNE dla generowania planu
+    dniTreningowe: {
+      type: [String],
+      required: [true, 'Dni treningowe są wymagane'],
+      validate: {
+        validator: function(v) {
+          return v && v.length > 0;
+        },
+        message: 'Musi być wybrana co najmniej jeden dzień treningowy'
+      }
+    },
+    trainingDays: {
+      type: [String],
+      required: [true, 'Training days are required (English version)'],
+      validate: {
+        validator: function(v) {
+          return v && v.length > 0;
+        },
+        message: 'At least one training day must be selected'
+      }
+    }
   },
   
   // Konfiguracja harmonogramu

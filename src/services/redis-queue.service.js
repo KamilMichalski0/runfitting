@@ -58,6 +58,7 @@ class RedisQueueService {
       });
 
       this.trainingPlanQueue.on('active', (job) => {
+        console.log(`⚡ [REDIS-QUEUE] Job ${job.id} started processing type: ${job.name}`);
         logger.info(`Job ${job.id} started processing`);
       });
 
@@ -66,6 +67,7 @@ class RedisQueueService {
       });
 
       this.trainingPlanQueue.on('failed', (job, err) => {
+        console.log(`❌ [REDIS-QUEUE] Job ${job.id} failed with error:`, err.message);
         logger.error(`Job ${job.id} failed:`, err);
       });
 
@@ -95,15 +97,72 @@ class RedisQueueService {
       await this.initialize();
     }
 
-    // If Redis queue is not available, return a mock job object
+    // If Redis queue is not available, process synchronously
     if (!this.trainingPlanQueue) {
-      logger.warn(`Redis queue not available, job ${jobId} will be processed synchronously`);
-      return {
-        id: jobId,
-        data: jobData,
-        opts: options,
-        status: 'completed-sync'
-      };
+      logger.warn(`Redis queue not available, processing job ${jobId} synchronously`);
+      
+      // Simulate job processing synchronously
+      try {
+        // Store job for synchronous processing - will be handled by callback
+        // Store in a simple in-memory map for now
+        if (!this.syncJobs) this.syncJobs = new Map();
+        
+        this.syncJobs.set(jobId, {
+          id: jobId,
+          data: jobData,
+          type: jobData.type,
+          timestamp: Date.now(),
+          status: 'pending'
+        });
+        
+        // Process immediately in background
+        setImmediate(async () => {
+          try {
+            // Use callback-based processing to avoid circular dependency
+            if (this.syncProcessor) {
+              const result = await this.syncProcessor(jobData);
+              if (this.syncJobs.has(jobId)) {
+                const job = this.syncJobs.get(jobId);
+                job.status = 'completed';
+                job.result = result;
+                // Extract planId from result if available
+                if (result && result._id) {
+                  job.planId = result._id;
+                }
+              }
+              logger.info(`Synchronously processed job: ${jobId}`);
+            } else {
+              logger.warn(`No sync processor registered for job: ${jobId}`);
+              if (this.syncJobs.has(jobId)) {
+                this.syncJobs.get(jobId).status = 'failed';
+                this.syncJobs.get(jobId).error = 'No sync processor available';
+              }
+            }
+          } catch (error) {
+            logger.error(`Error in synchronous processing: ${jobId}`, error);
+            if (this.syncJobs.has(jobId)) {
+              this.syncJobs.get(jobId).status = 'failed';
+              this.syncJobs.get(jobId).error = error.message;
+            }
+          }
+        });
+        
+        return {
+          id: jobId,
+          data: jobData,
+          opts: options,
+          status: 'queued-sync'
+        };
+      } catch (error) {
+        logger.error(`Failed to process job synchronously: ${jobId}`, error);
+        return {
+          id: jobId,
+          data: jobData,
+          opts: options,
+          status: 'failed-sync',
+          error: error.message
+        };
+      }
     }
 
     const jobOptions = {
@@ -117,12 +176,15 @@ class RedisQueueService {
       // Określ typ zadania na podstawie danych
       const jobType = jobData.type === 'weekly_plan_generation' ? 'generate-weekly-plan' : 'generate-training-plan';
       
+      console.log(`🔥 [REDIS-QUEUE] Adding job type: ${jobType} for jobData.type: ${jobData.type}`);
+      
       const job = await this.trainingPlanQueue.add(
         jobType,
         jobData,
         jobOptions
       );
 
+      console.log(`✅ [REDIS-QUEUE] Job added successfully: ${jobType} with id: ${job.id}`);
       logger.info(`${jobType} job ${jobId} added to queue`);
       return job;
     } catch (error) {
@@ -141,20 +203,52 @@ class RedisQueueService {
       await this.initialize();
     }
 
-    // If Redis queue is not available, return a mock status
+    console.log(`🔍 [REDIS-QUEUE] Checking job status for: ${jobId}`);
+
+    // If Redis queue is not available, check synchronous job status
     if (!this.trainingPlanQueue) {
-      return {
-        id: jobId,
-        status: 'completed',
-        progress: 100,
-        createdAt: new Date(),
-        processedAt: new Date(),
-        finishedAt: new Date(),
-        failedReason: null,
-        attempts: 1,
-        maxAttempts: 1,
-        data: {}
-      };
+      const syncJob = this.getSyncJobStatus(jobId);
+      
+      if (syncJob) {
+        // Calculate realistic progress for sync jobs
+        const timeElapsed = Date.now() - syncJob.timestamp;
+        const expectedDuration = 30000; // 30 seconds expected
+        const progressFromTime = Math.min((timeElapsed / expectedDuration) * 100, 95);
+        
+        let status, progress;
+        if (syncJob.status === 'completed') {
+          status = 'completed';
+          progress = 100;
+        } else if (syncJob.status === 'failed') {
+          status = 'failed'; 
+          progress = 0;
+        } else if (syncJob.status === 'pending') {
+          status = 'processing';
+          progress = Math.max(progressFromTime, 10); // At least 10% progress
+        } else {
+          status = 'waiting';
+          progress = 5;
+        }
+        
+        return {
+          id: jobId,
+          status: status,
+          progress: Math.round(progress),
+          createdAt: new Date(syncJob.timestamp),
+          processedAt: syncJob.status !== 'pending' ? new Date(syncJob.timestamp + 1000) : null,
+          finishedAt: syncJob.status === 'completed' ? new Date() : null,
+          failedReason: syncJob.error || null,
+          attempts: 1,
+          data: syncJob.data,
+          returnValue: syncJob.result || null,
+          result: syncJob.status === 'completed' && syncJob.planId ? { 
+            planId: syncJob.planId 
+          } : null
+        };
+      }
+      
+      // Job not found in sync jobs - return not found status
+      return null;
     }
 
     try {
@@ -304,6 +398,25 @@ class RedisQueueService {
    */
   getQueue() {
     return this.trainingPlanQueue;
+  }
+
+  /**
+   * Register synchronous processor for when Redis is not available
+   * @param {Function} processor - Function to process jobs synchronously
+   */
+  setSyncProcessor(processor) {
+    this.syncProcessor = processor;
+    logger.info('Synchronous job processor registered');
+  }
+
+  /**
+   * Get status of synchronous job
+   * @param {string} jobId - Job ID
+   * @returns {Object|null} - Job status or null if not found
+   */
+  getSyncJobStatus(jobId) {
+    if (!this.syncJobs) return null;
+    return this.syncJobs.get(jobId) || null;
   }
 
   /**

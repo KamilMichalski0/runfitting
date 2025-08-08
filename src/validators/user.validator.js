@@ -48,6 +48,18 @@ exports.validateProfileUpdate = [
     .optional()
     .isIn(['male', 'female', 'other'])
     .withMessage('Płeć musi być jedną z: male, female, other'),
+  // Running form fields
+  body('glownyCel').optional(),
+  body('poziomZaawansowania').optional(),
+  body('dystansDocelowy').optional(),
+  body('dniTreningowe').optional().isArray(),
+  body('czasTreningu').optional().isNumeric(),
+  body('doswiadczenieBiegowe').optional(),
+  body('miejsceTreningu').optional(),
+  body('preferencjeTempa').optional(),
+  body('motywacjaDoTreningow').optional(),
+  body('wsparcie').optional(),
+  body('aktualnyKilometrTygodniowy').optional().isNumeric(),
   exports.validate
 ];
 

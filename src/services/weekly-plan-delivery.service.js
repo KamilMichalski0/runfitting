@@ -1,5 +1,6 @@
 const WeeklyPlanSchedule = require('../models/weekly-plan-schedule.model');
 const TrainingPlan = require('../models/training-plan.model');
+const TrainingFormSubmission = require('../models/running-form.model');
 const GeminiService = require('./gemini.service');
 const runningKnowledgeBase = require('../knowledge/running-knowledge-base');
 const correctiveExercisesKnowledgeBase = require('../knowledge/corrective-knowledge-base');
@@ -35,6 +36,28 @@ class WeeklyPlanDeliveryService {
       if (existingSchedule) {
         throw new AppError('Użytkownik już posiada aktywny harmonogram dostarczania planów', 400);
       }
+
+      // Dodatkowa walidacja dni treningowych na poziomie serwisu
+      const userProfile = scheduleData.userProfile;
+      if (!userProfile) {
+        throw new AppError('Profil użytkownika jest wymagany do utworzenia harmonogramu', 400);
+      }
+
+      const dniTreningowe = userProfile.dniTreningowe || userProfile.trainingDays;
+      if (!dniTreningowe || !Array.isArray(dniTreningowe) || dniTreningowe.length === 0) {
+        logError(`Critical validation failure: Missing or invalid training days for user ${userId}`, {
+          userProfile: userProfile,
+          dniTreningowe: dniTreningowe,
+          availableKeys: Object.keys(userProfile || {})
+        });
+        throw new AppError('Dni treningowe są wymagane i muszą być niepustą tablicą. Sprawdź czy formularz został poprawnie wypełniony.', 400);
+      }
+
+      logInfo(`Service validation passed for user ${userId}`, {
+        dniTreningowe: dniTreningowe,
+        daysCount: dniTreningowe.length,
+        userProfileKeys: Object.keys(userProfile)
+      });
 
       // Utwórz nowy harmonogram
       const schedule = new WeeklyPlanSchedule({
@@ -182,15 +205,33 @@ class WeeklyPlanDeliveryService {
       }
       
       // Prepare data for plan generation with the correct week number
-      const weeklyData = this.prepareWeeklyPlanDataWithWeek(schedule, targetWeekNumber);
+      logInfo(`Preparing weekly data for schedule ${schedule._id}`, {
+        userId: schedule.userId,
+        targetWeekNumber,
+        resetToWeekOne,
+        schedule_userProfile_dniTreningowe: schedule.userProfile?.dniTreningowe,
+        schedule_userProfile_trainingDays: schedule.userProfile?.trainingDays,
+        hasUserProfile: !!schedule.userProfile,
+        userProfileKeys: schedule.userProfile ? Object.keys(schedule.userProfile) : []
+      });
+      
+      const weeklyData = await this.prepareWeeklyPlanDataWithWeek(schedule, targetWeekNumber);
       
       let planData;
       try {
         // Wygeneruj plan za pomocą ulepszonego Gemini Service (z wbudowanym fallbackiem)
+        console.log(`🎯 [WEEKLY-DELIVERY-SERVICE] CALLING geminiService.generateWeeklyTrainingPlan`);
+        console.log(`🎯 [WEEKLY-DELIVERY-SERVICE] weeklyData.dniTreningowe: ${JSON.stringify(weeklyData?.dniTreningowe)}`);
         planData = await this.geminiService.generateWeeklyTrainingPlan(weeklyData);
+        console.log(`🎯 [WEEKLY-DELIVERY-SERVICE] GEMINI RETURNED planData: ${planData ? 'success' : 'null/undefined'}`);
       } catch (error) {
         logError('Błąd podczas generowania planu tygodniowego', error);
         
+        // Nie używamy fallback - plan jest personalizowany i powinien być generowany przez AI
+        // Jeśli AI nie działa, lepiej poczekać niż dać ogólny plan
+        throw new Error(`Nie udało się wygenerować spersonalizowanego planu treningowego. Spróbuj ponownie za kilka minut. Szczegóły: ${error.message}`);
+        
+        /* STARY FALLBACK CODE - USUNIĘTY
         // Dynamic fallback plan with variety based on week number
         const baseDuration = 20 + (targetWeekNumber * 5); // Progressive increase
         const baseDistance = 3 + (targetWeekNumber * 0.5); // Progressive distance
@@ -294,6 +335,7 @@ class WeeklyPlanDeliveryService {
         };
         
         logInfo('Użyto fallback planu tygodniowego');
+        */
       }
       
       // Generuj unikalny identyfikator dla planu
@@ -399,10 +441,44 @@ class WeeklyPlanDeliveryService {
    * @param {number} weekNumber - Docelowy numer tygodnia
    * @returns {Object} Dane dla generatora
    */
-  prepareWeeklyPlanDataWithWeek(schedule, weekNumber) {
+  async prepareWeeklyPlanDataWithWeek(schedule, weekNumber) {
     // Sprawdź czy schedule i jego właściwości istnieją
     if (!schedule) {
       throw new Error('Schedule object is required');
+    }
+    
+    // Pobierz najnowszy formularz użytkownika
+    let userFormData = schedule.userProfile; // fallback to existing data
+    try {
+      const latestForm = await TrainingFormSubmission.findOne({ userId: schedule.userId }).sort({ createdAt: -1 });
+      if (latestForm) {
+        logInfo(`Użyto najnowszego formularza dla użytkownika ${schedule.userId} z dnia ${latestForm.createdAt}`);
+        userFormData = latestForm.toObject();
+        console.log('🔍 DEBUG latestForm.dniTreningowe:', latestForm.dniTreningowe);
+        console.log('🔍 DEBUG userFormData.dniTreningowe po toObject():', userFormData.dniTreningowe);
+        
+        // Jeśli dniTreningowe jest puste, spróbuj użyć danych z profilu użytkownika
+        if ((!userFormData.dniTreningowe || userFormData.dniTreningowe.length === 0) && schedule.userProfile) {
+          console.log('⚠️ Formularz ma puste dniTreningowe, sprawdzam profil użytkownika');
+          if (schedule.userProfile.dniTreningowe && schedule.userProfile.dniTreningowe.length > 0) {
+            userFormData.dniTreningowe = schedule.userProfile.dniTreningowe;
+            console.log('✅ Użyto dni z profilu:', userFormData.dniTreningowe);
+          } else if (schedule.userProfile.trainingDays && schedule.userProfile.trainingDays.length > 0) {
+            userFormData.dniTreningowe = schedule.userProfile.trainingDays;
+            console.log('✅ Użyto trainingDays z profilu:', userFormData.dniTreningowe);
+          }
+        }
+        
+        console.log('🔍 DEBUG wszystkie pola formularza:', Object.keys(userFormData));
+        console.log('🔍 DEBUG schedule.userProfile:', schedule.userProfile);
+      } else {
+        logWarning(`Nie znaleziono formularza dla użytkownika ${schedule.userId}, używam danych z harmonogramu`);
+        console.log('🔍 DEBUG schedule.userProfile:', schedule.userProfile);
+        console.log('🔍 DEBUG schedule.userProfile.dniTreningowe:', schedule.userProfile?.dniTreningowe);
+      }
+    } catch (error) {
+      logError(`Błąd podczas pobierania najnowszego formularza dla użytkownika ${schedule.userId}`, error);
+      // Użyj danych z harmonogramu jako fallback
     }
     
     // Domyślne wartości dla progressTracking
@@ -421,11 +497,19 @@ class WeeklyPlanDeliveryService {
     } || defaultProgressTracking;
     
     const weeklyData = {
-      // Podstawowe dane użytkownika
-      ...schedule.userProfile,
+      // Podstawowe dane użytkownika z najnowszego formularza
+      ...userFormData,
       
-      // Dane użytkownika dla Gemini Service
-      userData: schedule.userProfile || {},
+      // KRYTYCZNE: Dni treningowe z harmonogramu (przesłaniają ewentualnie puste z formularza)
+      dniTreningowe: schedule.userProfile?.dniTreningowe || userFormData?.dniTreningowe,
+      trainingDays: schedule.userProfile?.trainingDays || userFormData?.trainingDays,
+      
+      // Dane użytkownika dla Gemini Service (zaktualizowane o dni treningowe)
+      userData: {
+        ...(userFormData || {}),
+        dniTreningowe: schedule.userProfile?.dniTreningowe || userFormData?.dniTreningowe,
+        trainingDays: schedule.userProfile?.trainingDays || userFormData?.trainingDays
+      },
       
       // Kontekst progresji z zabezpieczeniami (używając podanego weekNumber)
       weekNumber: weekNumber,
@@ -449,6 +533,44 @@ class WeeklyPlanDeliveryService {
       planType: 'weekly',
       deliveryFrequency: schedule.deliveryFrequency || 'weekly'
     };
+    
+    logInfo(`WeeklyData prepared with training days`, {
+      weeklyData_dniTreningowe: weeklyData.dniTreningowe,
+      weeklyData_trainingDays: weeklyData.trainingDays,
+      userData_dniTreningowe: weeklyData.userData.dniTreningowe,
+      userData_trainingDays: weeklyData.userData.trainingDays,
+      source_schedule: schedule.userProfile?.dniTreningowe,
+      source_form: userFormData?.dniTreningowe
+    });
+
+    // Finalna walidacja danych przed przekazaniem do AI - BEZ fallbacków
+    let finalTrainingDays = weeklyData.dniTreningowe || weeklyData.trainingDays || [];
+    
+    // KRYTYCZNA WALIDACJA: Jeśli brak dni treningowych, RZUĆ BŁĄD
+    if (!Array.isArray(finalTrainingDays) || finalTrainingDays.length === 0) {
+      logError(`CRITICAL: No valid training days found for AI generation - user ${schedule.userId}`, {
+        weeklyData_dniTreningowe: weeklyData.dniTreningowe,
+        weeklyData_trainingDays: weeklyData.trainingDays,
+        userFormData_dniTreningowe: userFormData?.dniTreningowe,
+        schedule_userProfile_dniTreningowe: schedule.userProfile?.dniTreningowe,
+        schedule_userProfile_trainingDays: schedule.userProfile?.trainingDays,
+        weeklyDataKeys: Object.keys(weeklyData)
+      });
+      
+      throw new AppError(
+        'Brak dni treningowych do wygenerowania planu. System nie może utworzyć planu bez określonych dni treningowych. Sprawdź formularz biegowy.', 
+        400
+      );
+    }
+
+    logInfo(`Training days validation passed for AI generation - user ${schedule.userId}`, {
+      finalTrainingDays: finalTrainingDays,
+      daysCount: finalTrainingDays.length,
+      weekNumber: weekNumber
+    });
+
+    console.log('🔍 DEBUG weeklyData.dniTreningowe na końcu prepareWeeklyPlanDataWithWeek:', weeklyData.dniTreningowe);
+    console.log('🔍 DEBUG weeklyData klucze:', Object.keys(weeklyData));
 
     return weeklyData;
   }
@@ -1122,6 +1244,27 @@ class WeeklyPlanDeliveryService {
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        // Check if document has save method (is a Mongoose document)
+        if (typeof document.save !== 'function') {
+          // If it's not a Mongoose document, try to reload it from database
+          if (document._id) {
+            const freshDoc = await WeeklyPlanSchedule.findById(document._id);
+            if (freshDoc) {
+              // Copy changes to the fresh document
+              freshDoc.recentPlans = document.recentPlans;
+              freshDoc.progressTracking = document.progressTracking;
+              freshDoc.lastDeliveryDate = document.lastDeliveryDate;
+              freshDoc.nextDeliveryDate = document.nextDeliveryDate;
+              
+              return await freshDoc.save();
+            } else {
+              throw new Error(`Document with ID ${document._id} not found in database`);
+            }
+          } else {
+            throw new Error('Document does not have save method and no _id field');
+          }
+        }
+        
         // Przed zapisem, odśwież dokument z bazy aby mieć najnowszą wersję
         if (attempt > 1) {
           // Reload document z bazy danych

@@ -1,7 +1,5 @@
 const axios = require('axios');
 const geminiConfig = require('../config/gemini.config');
-const openaiConfig = require('../config/openai.config');
-const { OpenAI } = require('openai');
 const AppError = require('../utils/app-error');
 // const { getExamplePlanTemplate } = require('../templates/plan-template-selector'); // Może być potrzebne do kontekstu
 
@@ -19,17 +17,6 @@ class PlanModificationService {
       responseMimeType: 'application/json',
     };
 
-    // Konfiguracja OpenAI
-    this.openaiApiKey = openaiConfig.apiKey;
-    if (this.openaiApiKey) {
-      this.openai = new OpenAI({ apiKey: this.openaiApiKey });
-      this.openaiModel = openaiConfig.model; // Dostosowany model OpenAI do modyfikacji
-      this.openaiTemperature = openaiConfig.temperature;
-      this.openaiMaxTokens = openaiConfig.maxTokens; // Mniejsza liczba tokenów dla modyfikacji
-      this.openaiTopP = openaiConfig.topP;
-    } else {
-      this.openai = null;
-    }
 
     this.axiosClient = axios.create();
     this.knowledgeBase = knowledgeBase; // Baza wiedzy może być przydatna do kontekstu modyfikacji
@@ -131,39 +118,12 @@ class PlanModificationService {
             this.error('Gemini Error Response Status:', geminiError.response.status);
             this.error('Gemini Error Response Data:', geminiError.response.data);
         }
-        // Fallback do OpenAI jeśli Gemini zawiedzie
-      }
-    }
-
-    // Logika wywołania OpenAI API (podobna do tej w GeminiService)
-    if (this.openai) {
-      try {
-        this.log('Próba modyfikacji przez OpenAI (fallback)...');
-        const messages = [
-          { role: 'system', content: 'Jesteś ekspertem AI modyfikującym plany treningowe. Zwróć tylko JSON.' },
-          { role: 'user', content: prompt }
-        ];
-        const requestBody = {
-          model: this.openaiModel,
-          messages: messages,
-          temperature: this.openaiTemperature,
-          max_tokens: this.openaiMaxTokens,
-          top_p: this.openaiTopP,
-          response_format: { type: "json_object" },
-        };
-        const response = await this.openai.chat.completions.create(requestBody);
-        this.log('Otrzymano odpowiedź z OpenAI.');
-        return this._parseOpenAIModificationResponse(response, isDayModification);
-      } catch (openaiError) {
-        this.error('Błąd podczas modyfikacji przez OpenAI:', openaiError.message);
-        if (openaiError.response) {
-            this.error('OpenAI Error Response Status:', openaiError.response.status);
-            this.error('OpenAI Error Response Data:', openaiError.response.data);
-        }
+        // Brak fallbacku - Gemini to jedyne źródło planów
+        throw error;
       }
     }
     
-    throw new AppError('Nie udało się zmodyfikować planu za pomocą dostępnych modeli AI.', 500);
+    throw new AppError('Nie udało się zmodyfikować planu za pomocą Gemini AI.', 500);
   }
 
   _parseModificationResponse(apiResponse, isDayModification) {
@@ -186,24 +146,6 @@ class PlanModificationService {
     }
   }
 
-  _parseOpenAIModificationResponse(apiResponse, isDayModification) {
-    // TODO: Zaimplementować parsowanie odpowiedzi z OpenAI (podobne do GeminiService._parseOpenAIResponse)
-    this.log('Parsowanie odpowiedzi OpenAI (modyfikacja)');
-    try {
-        if (!apiResponse || !apiResponse.choices || !apiResponse.choices[0] || !apiResponse.choices[0].message || !apiResponse.choices[0].message.content) {
-            throw new Error('Nieprawidłowa struktura odpowiedzi OpenAI.');
-        }
-        const jsonString = apiResponse.choices[0].message.content;
-        const modifiedPart = JSON.parse(jsonString);
-
-        // TODO: Dodać walidację struktury zmodyfikowanego dnia/tygodnia
-        this.log('Pomyślnie sparsowano odpowiedź OpenAI (modyfikacja).');
-        return modifiedPart;
-    } catch (e) {
-        this.error('Błąd parsowania odpowiedzi OpenAI (modyfikacja):', e.message);
-        throw new AppError('Nie udało się sparsować odpowiedzi AI (OpenAI) dla modyfikacji.', 500);
-    }
-  }
 
   /**
    * Modyfikuje pojedynczy dzień w planie treningowym.

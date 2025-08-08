@@ -463,7 +463,8 @@ router.post('/form',
  *       401:
  *         description: Brak uwierzytelnienia
  */
-router.post('/form/save', trainingPlanController.saveRunningForm);
+// DEPRECATED: Form submission now handled through unified profile endpoint
+// router.post('/form/save', trainingPlanController.saveRunningForm);
 
 /**
  * @swagger

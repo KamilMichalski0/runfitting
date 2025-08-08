@@ -1,6 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/user.controller');
+
+console.log('[USER ROUTES] Loading user.routes.js file');
+
+// VERY SIMPLE TEST ROUTE AT THE TOP
+router.get('/test-simple', (req, res) => {
+  console.log('[DEBUG] Simple test route hit!');
+  res.json({ message: 'Simple test works!' });
+});
 const supabaseAuth = require('../middleware/supabaseAuth.middleware');
 const {
   validateProfileUpdate,
@@ -270,4 +278,5 @@ router.get('/me/subscription-limits', supabaseAuth, userController.getSubscripti
  */
 
 
+console.log('[USER ROUTES] Exporting router with registered routes');
 module.exports = router;

@@ -14,7 +14,9 @@ const compression = require('compression');
 const swaggerSpec = require('./config/swaggerConfig');
 
 // Import routes
+console.log('[APP] Importing user routes...');
 const userRoutes = require('./routes/user.routes');
+console.log('[APP] User routes imported successfully:', typeof userRoutes);
 
 const planRoutes = require('./routes/plan.routes');
 
@@ -88,11 +90,25 @@ app.use(xss()); // Sanityzuje dane wejściowe
 
 // Usunięto globalne stosowanie supabaseAuth - jest teraz w routerach
 
-// Ograniczenie liczby żądań
+// Health check endpoint (przed rate limiterem)
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    service: 'RunFitting API',
+    version: '1.0.0'
+  });
+});
+
+// Ograniczenie liczby żądań (po health check)
 const limiter = rateLimit({
   max: 100, // Maksymalna liczba żądań
   windowMs: 60 * 60 * 1000, // 1 godzina
-  message: 'Zbyt wiele żądań z tego adresu IP, spróbuj ponownie za godzinę!'
+  message: 'Zbyt wiele żądań z tego adresu IP, spróbuj ponownie za godzinę!',
+  skip: (req) => {
+    // Pomijaj rate limiting dla health check (dodatkowa ochrona)
+    return req.path === '/api/health';
+  }
 });
 app.use('/api', limiter);
 
@@ -108,8 +124,23 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Routing
+// Routing (without extra middleware for now)
+console.log('[APP] Registering user routes at /api/users');
 app.use('/api/users', userRoutes);
+
+// DEBUG: Print all registered routes
+console.log('[APP] All registered routes:');
+app._router.stack.forEach((middleware) => {
+  if (middleware.route) {
+    console.log(`  ${Object.keys(middleware.route.methods).join(',').toUpperCase()} ${middleware.route.path}`);
+  } else if (middleware.name === 'router') {
+    middleware.handle.stack.forEach((handler) => {
+      if (handler.route) {
+        console.log(`  ${Object.keys(handler.route.methods).join(',').toUpperCase()} ${middleware.regexp.source}${handler.route.path}`);
+      }
+    });
+  }
+});
 app.use('/api/plans', planRoutes);
 app.use('/api/running-forms', runningFormRoutes);
 app.use('/api/weekly-schedule', weeklyScheduleRoutes);
@@ -120,16 +151,6 @@ app.get('/', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'API RunFitting działa prawidłowo!'
-  });
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    service: 'RunFitting API',
-    version: '1.0.0'
   });
 });
 

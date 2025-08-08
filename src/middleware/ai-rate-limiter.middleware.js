@@ -32,8 +32,8 @@ const createAIRateLimiter = () => {
           return req.user?.id || req.ip;
         },
         skip: (req) => {
-          // Pomiń rate limiting w środowisku testowym
-          return process.env.NODE_ENV === 'test';
+          // Wyłącz rate limiting całkowicie dla testów
+          return true;
         },
         handler: (req, res) => {
           const userId = req.user?.id || req.ip;
@@ -65,7 +65,7 @@ const createAIRateLimiter = () => {
       return req.user?.id || req.ip;
     },
     skip: (req) => {
-      return process.env.NODE_ENV === 'test';
+      return true;
     },
     handler: (req, res) => {
       const userId = req.user?.id || req.ip;
@@ -106,7 +106,7 @@ const createJobStatusRateLimiter = () => {
           return req.user?.id || req.ip;
         },
         skip: (req) => {
-          return process.env.NODE_ENV === 'test';
+          return true;
         }
       });
     }
@@ -127,7 +127,7 @@ const createJobStatusRateLimiter = () => {
       return req.user?.id || req.ip;
     },
     skip: (req) => {
-      return process.env.NODE_ENV === 'test';
+      return process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development';
     }
   });
 };

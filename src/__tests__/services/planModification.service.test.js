@@ -3,10 +3,9 @@ const AppError = require('../../utils/app-error'); // Assuming AppError is in sr
 
 /**
  * @file Integration tests for PlanModificationService.
- * @important These tests make REAL API calls to Gemini (and potentially OpenAI).
- * Ensure your API keys are correctly configured in:
+ * @important These tests make REAL API calls to Gemini.
+ * Ensure your API key is correctly configured in:
  * - src/config/gemini.config.js
- * - src/config/openai.config.js
  */
 
 describe('PlanModificationService Integration Tests', () => {
@@ -101,7 +100,7 @@ describe('PlanModificationService Integration Tests', () => {
       const dayIndex = 0; // Modifying "Poniedziałek" of week 1
       const modificationReason = "Użytkownik prosi o nieco lżejszy trening dzisiaj z powodu gorszego snu.";
 
-      // This will make a real API call to Gemini (or OpenAI as fallback)
+      // This will make a real API call to Gemini
       const modifiedDay = await planModificationService.modifyDayInPlan(
         mockOriginalPlan,
         weekIndex,
@@ -182,8 +181,6 @@ describe('PlanModificationService Integration Tests', () => {
     });
   });
 
-  // Note: Testing the OpenAI fallback specifically would require manipulating the Gemini API key
-  // or configuration, which is complex for a standard integration test run.
-  // These tests primarily verify the happy path with the configured AI services.
-  // If Gemini is configured and working, it will be used. If not, and OpenAI is, OpenAI will be used.
+  // These tests verify the integration with Gemini AI service.
+  // Gemini is the only AI provider used for plan modifications.
 }); 

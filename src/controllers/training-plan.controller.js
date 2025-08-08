@@ -119,12 +119,22 @@ class TrainingPlanController {
         };
       }
 
-      // Zapisanie danych formularza w bazie
-      const runningForm = new TrainingFormSubmission({
-        ...processedFormData,
-        userId,
-        status: 'queued'
-      });
+      // Sprawdź czy user już ma formularz - jeśli tak, zaktualizuj go, jeśli nie, stwórz nowy
+      let runningForm = await TrainingFormSubmission.findOne({ userId });
+      
+      if (runningForm) {
+        // Aktualizuj istniejący formularz
+        Object.assign(runningForm, processedFormData);
+        runningForm.status = 'queued';
+        runningForm.updatedAt = new Date();
+      } else {
+        // Stwórz nowy formularz
+        runningForm = new TrainingFormSubmission({
+          ...processedFormData,
+          userId,
+          status: 'queued'
+        });
+      }
       
       await runningForm.save();
 
@@ -231,14 +241,24 @@ class TrainingPlanController {
         });
       }
 
-      // Zapisanie danych formularza w bazie
-      const newFormSubmission = new TrainingFormSubmission({
-        ...formData,
-        userId,
-        status: 'przetwarzany' // Status wskazujący rozpoczęcie przetwarzania
-      });
+      // Sprawdź czy user już ma formularz - jeśli tak, zaktualizuj go, jeśli nie, stwórz nowy
+      let formSubmission = await TrainingFormSubmission.findOne({ userId });
+      
+      if (formSubmission) {
+        // Aktualizuj istniejący formularz
+        Object.assign(formSubmission, formData);
+        formSubmission.status = 'przetwarzany';
+        formSubmission.updatedAt = new Date();
+      } else {
+        // Stwórz nowy formularz
+        formSubmission = new TrainingFormSubmission({
+          ...formData,
+          userId,
+          status: 'przetwarzany' // Status wskazujący rozpoczęcie przetwarzania
+        });
+      }
 
-      await newFormSubmission.save();
+      await formSubmission.save();
       logInfo(`Zapisano formularz biegowy dla użytkownika: ${userId}`);
 
       // === AUTOMATYCZNE URUCHOMIENIE SYSTEMU TYGODNIOWYCH DOSTAW ===
@@ -276,10 +296,10 @@ class TrainingPlanController {
         const firstWeeklyPlan = await this.weeklyPlanDeliveryService.generateWeeklyPlan(schedule);
 
         // 5. Aktualizuj status formularza
-        newFormSubmission.status = 'wygenerowany';
-        newFormSubmission.planId = firstWeeklyPlan._id;
-        newFormSubmission.scheduleId = schedule._id;
-        await newFormSubmission.save();
+        formSubmission.status = 'wygenerowany';
+        formSubmission.planId = firstWeeklyPlan._id;
+        formSubmission.scheduleId = schedule._id;
+        await formSubmission.save();
 
         logInfo(`Pomyślnie uruchomiono system tygodniowych dostaw dla użytkownika: ${userId}`);
 
@@ -308,13 +328,13 @@ class TrainingPlanController {
         logError('Błąd podczas uruchamiania systemu tygodniowych dostaw', scheduleError);
         
         // Nawet jeśli harmonogram się nie udał, formularz został zapisany
-        newFormSubmission.status = 'błąd_harmonogramu';
-        await newFormSubmission.save();
+        formSubmission.status = 'błąd_harmonogramu';
+        await formSubmission.save();
 
         res.status(201).json({
           status: 'partial_success',
           data: {
-            formId: newFormSubmission._id,
+            formId: formSubmission._id,
             message: 'Formularz zapisany, ale wystąpił problem z uruchomieniem automatycznych dostaw planów.',
             error: scheduleError.message
           }
@@ -1049,6 +1069,33 @@ class TrainingPlanController {
    * @returns {Object} Profil użytkownika
    */
   mapFormToUserProfile(formData) {
+    // Map English day names to Polish
+    const dayMapping = {
+      'monday': 'poniedziałek',
+      'tuesday': 'wtorek', 
+      'wednesday': 'środa',
+      'thursday': 'czwartek',
+      'friday': 'piątek',
+      'saturday': 'sobota',
+      'sunday': 'niedziela'
+    };
+    
+    // Validate training days - NO fallbacks!
+    let trainingDays = formData.dniTreningowe;
+    
+    if (!trainingDays || !Array.isArray(trainingDays) || trainingDays.length === 0) {
+      throw new Error(`Brak dni treningowych w formularzu. Pole dniTreningowe jest wymagane i nie może być puste. Otrzymane: ${JSON.stringify(formData.dniTreningowe)}`);
+    }
+    
+    // If the days are in English, convert them to Polish
+    if (Array.isArray(trainingDays) && trainingDays.length > 0) {
+      const firstDay = trainingDays[0];
+      if (dayMapping[firstDay]) {
+        // Days are in English, convert to Polish
+        trainingDays = trainingDays.map(day => dayMapping[day] || day);
+      }
+    }
+    
     return {
       name: formData.imieNazwisko || formData.name || 'Biegacz',
       age: formData.wiek || formData.age || 30,
@@ -1062,7 +1109,8 @@ class TrainingPlanController {
       vo2max: formData.vo2max,
       targetDistance: formData.dystansDocelowy,
       description: formData.opisCelu || formData.description || '',
-      trainingDays: formData.dniTreningowe || ['monday', 'wednesday', 'friday'],
+      trainingDays: trainingDays,
+      dniTreningowe: trainingDays, // Dodaj też to pole dla kompatybilności
       preferredTrainingTime: formData.preferowanyCzasTreningu || 'rano',
       availableTime: formData.czasTreningu || 60
     };
