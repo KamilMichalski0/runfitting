@@ -39,9 +39,10 @@ const server = app.listen(port, () => {
   console.log(`Serwer uruchomiony na porcie ${port}`);
   console.log(`Dokumentacja API dostępna pod adresem: http://localhost:${port}/api-docs`);
   
-  // Uruchomienie cron job dla dostarczania planów tygodniowych
-  weeklyPlanDeliveryJob.start();
-  console.log('Uruchomiono cron job dla dostarczania planów tygodniowych');
+  // WYŁĄCZONO: Automatyczne cron joby dla dostarczania planów tygodniowych
+  // Plany są teraz generowane tylko po ocenie poprzedniego tygodnia
+  // weeklyPlanDeliveryJob.start();
+  console.log('UWAGA: Automatyczne cron joby są WYŁĄCZONE. Plany generowane tylko po ocenie tygodnia.');
 });
 
 // Obsługa nieobsłużonych odrzuceń (rejection)

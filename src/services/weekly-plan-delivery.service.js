@@ -11,8 +11,17 @@ const { logInfo, logError, logWarning } = require('../utils/logger');
 const userLocks = new Map();
 
 /**
- * Serwis odpowiedzialny za cykliczne dostarczanie planów treningowych
- * Generuje plany tygodniowe/dwutygodniowe na podstawie harmonogramów użytkowników
+ * Serwis odpowiedzialny za dostarczanie planów treningowych
+ * ZMIANA: Automatyczne cron joby WYŁĄCZONE - plany generowane tylko po ocenie tygodnia
+ * 
+ * Nowy przepływ:
+ * 1. Użytkownik kończy tydzień i ocenia go (updateWeeklyProgress)
+ * 2. System automatycznie generuje następny tydzień w tle (_generatePlanAsync)
+ * 3. Brak automatycznych dostaw według harmonogramu
+ * 
+ * Ręczne opcje:
+ * - manualDelivery: generowanie planu poza harmonogramem
+ * - generateNewPlan: nowy plan od tygodnia 1
  */
 class WeeklyPlanDeliveryService {
   constructor() {

@@ -13,9 +13,16 @@ class WeeklyPlanDeliveryJob {
   }
 
   /**
-   * Uruchamia cron job
+   * WYŁĄCZONO: Automatyczne cron joby zostały wyłączone
+   * Nowe plany są teraz generowane tylko po ocenie poprzedniego tygodnia
    */
   start() {
+    // CRON JOBY WYŁĄCZONE - generowanie tylko po ocenie tygodnia
+    logInfo('UWAGA: Automatyczne cron joby są WYŁĄCZONE. Plany generowane tylko po ocenie poprzedniego tygodnia.');
+    
+    // Komentarz pozostawiony dla przyszłego użytku:
+    /*
+    // POPRZEDNIE CRON JOBY - WYŁĄCZONE
     // Uruchamianie codziennie o 18:30
     cron.schedule('30 18 * * *', async () => {
       const startTime = Date.now();
@@ -49,8 +56,7 @@ class WeeklyPlanDeliveryJob {
     }, {
       timezone: "Europe/Warsaw"
     });
-
-    logInfo('Uruchomiono cron job dla dostarczania planów tygodniowych');
+    */
   }
 
   /**
