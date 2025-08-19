@@ -23,6 +23,7 @@ const planRoutes = require('./routes/plan.routes');
 const runningFormRoutes = require('./routes/running-form.routes');
 const weeklyScheduleRoutes = require('./routes/weekly-schedule.routes');
 const notificationRoutes = require('./routes/notification.routes');
+const monitoringRoutes = require('./routes/monitoring.routes');
 
 // Importowanie middleware obsługi błędów
 const globalErrorHandler = require('./middleware/error.middleware');
@@ -35,6 +36,11 @@ const sseNotificationService = require('./services/sse-notification.service');
 
 // Konfiguracja środowiska
 dotenv.config();
+
+// Set instance ID if not provided
+if (!process.env.INSTANCE_ID) {
+  process.env.INSTANCE_ID = require('crypto').randomBytes(4).toString('hex');
+}
 
 // Inicjalizacja aplikacji Express
 const app = express();
@@ -124,6 +130,19 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
+// Instance tracking middleware
+app.use((req, res, next) => {
+  // Add instance ID to all responses
+  res.setHeader('X-Instance-ID', process.env.INSTANCE_ID);
+  
+  // Log high-level request info for debugging multiple instances
+  if (req.method !== 'OPTIONS' && req.path.startsWith('/api/')) {
+    console.log(`[${process.env.INSTANCE_ID}] ${req.method} ${req.path}`);
+  }
+  
+  next();
+});
+
 // Routing (without extra middleware for now)
 console.log('[APP] Registering user routes at /api/users');
 app.use('/api/users', userRoutes);
@@ -145,6 +164,7 @@ app.use('/api/plans', planRoutes);
 app.use('/api/running-forms', runningFormRoutes);
 app.use('/api/weekly-schedule', weeklyScheduleRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/monitoring', monitoringRoutes);
 
 // Testowy endpoint
 app.get('/', (req, res) => {

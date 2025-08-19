@@ -1006,8 +1006,8 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
         throw new AppError('Błąd podczas przetwarzania odpowiedzi z Gemini API: ' + error.message, 500);
       }
       
-      // Ulepszona walidacja i naprawa planu (bez trainingDays w _parseResponse)
-      plan = this._validateAndRepairPlan(plan);
+      // USUNIĘTO: Walidacja pełnych planów - są deprecated
+      // Jedyna walidacja odbywa się w parseWeeklyPlanResponse() z prawidłowymi trainingDays
       
       // Diversity checking is now handled in parseWeeklyPlanResponse for weekly plans
       // This allows for proper retry logic when plans are too monotonous
