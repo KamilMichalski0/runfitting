@@ -24,14 +24,14 @@ class BeginnerRulesMiddleware {
         return next();
       }
       
-      // Mapa dni tygodnia na numery (0 = niedziela, 1 = poniedziałek, itd.)
+      // Mapa dni tygodnia na numery (0 = niedziela, 1 = poniedzialek, itd.)
       const dayMap = {
         'niedziela': 0,
-        'poniedziałek': 1,
+        'poniedzialek': 1,
         'wtorek': 2,
-        'środa': 3,
+        'sroda': 3,
         'czwartek': 4,
-        'piątek': 5,
+        'piatek': 5,
         'sobota': 6
       };
       
@@ -70,7 +70,7 @@ class BeginnerRulesMiddleware {
         const lastDay = dayNumbers[dayNumbers.length - 1];
         const firstDay = dayNumbers[0];
         
-        // Oblicz przerwę przez weekend (sobota -> poniedziałek = 2 dni)
+        // Oblicz przerwę przez weekend (sobota -> poniedzialek = 2 dni)
         const weekendGap = (7 - lastDay) + firstDay;
         
         if (weekendGap < 2) {

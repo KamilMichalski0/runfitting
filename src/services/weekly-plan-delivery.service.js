@@ -454,27 +454,16 @@ class WeeklyPlanDeliveryService {
       if (latestForm) {
         logInfo(`Użyto najnowszego formularza dla użytkownika ${schedule.userId} z dnia ${latestForm.createdAt}`);
         userFormData = latestForm.toObject();
-        console.log('🔍 DEBUG latestForm.dniTreningowe:', latestForm.dniTreningowe);
-        console.log('🔍 DEBUG userFormData.dniTreningowe po toObject():', userFormData.dniTreningowe);
-        
         // Jeśli dniTreningowe jest puste, spróbuj użyć danych z profilu użytkownika
         if ((!userFormData.dniTreningowe || userFormData.dniTreningowe.length === 0) && schedule.userProfile) {
-          console.log('⚠️ Formularz ma puste dniTreningowe, sprawdzam profil użytkownika');
           if (schedule.userProfile.dniTreningowe && schedule.userProfile.dniTreningowe.length > 0) {
             userFormData.dniTreningowe = schedule.userProfile.dniTreningowe;
-            console.log('✅ Użyto dni z profilu:', userFormData.dniTreningowe);
           } else if (schedule.userProfile.trainingDays && schedule.userProfile.trainingDays.length > 0) {
             userFormData.dniTreningowe = schedule.userProfile.trainingDays;
-            console.log('✅ Użyto trainingDays z profilu:', userFormData.dniTreningowe);
           }
         }
-        
-        console.log('🔍 DEBUG wszystkie pola formularza:', Object.keys(userFormData));
-        console.log('🔍 DEBUG schedule.userProfile:', schedule.userProfile);
       } else {
         logWarning(`Nie znaleziono formularza dla użytkownika ${schedule.userId}, używam danych z harmonogramu`);
-        console.log('🔍 DEBUG schedule.userProfile:', schedule.userProfile);
-        console.log('🔍 DEBUG schedule.userProfile.dniTreningowe:', schedule.userProfile?.dniTreningowe);
       }
     } catch (error) {
       logError(`Błąd podczas pobierania najnowszego formularza dla użytkownika ${schedule.userId}`, error);
@@ -569,8 +558,7 @@ class WeeklyPlanDeliveryService {
       weekNumber: weekNumber
     });
 
-    console.log('🔍 DEBUG weeklyData.dniTreningowe na końcu prepareWeeklyPlanDataWithWeek:', weeklyData.dniTreningowe);
-    console.log('🔍 DEBUG weeklyData klucze:', Object.keys(weeklyData));
+    // WeeklyData prepared successfully
 
     return weeklyData;
   }
@@ -1268,7 +1256,7 @@ class WeeklyPlanDeliveryService {
         // Przed zapisem, odśwież dokument z bazy aby mieć najnowszą wersję
         if (attempt > 1) {
           // Reload document z bazy danych
-          const freshDoc = await document.model.findById(document._id);
+          const freshDoc = await document.constructor.findById(document._id);
           if (freshDoc) {
             // Skopiuj zmiany na świeży dokument
             freshDoc.recentPlans = document.recentPlans;

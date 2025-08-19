@@ -1069,13 +1069,13 @@ class TrainingPlanController {
    * @returns {Object} Profil użytkownika
    */
   mapFormToUserProfile(formData) {
-    // Map English day names to Polish
+    // Map English day names to Polish (without diacritics)
     const dayMapping = {
-      'monday': 'poniedziałek',
+      'monday': 'poniedzialek',
       'tuesday': 'wtorek', 
-      'wednesday': 'środa',
+      'wednesday': 'sroda',
       'thursday': 'czwartek',
-      'friday': 'piątek',
+      'friday': 'piatek',
       'saturday': 'sobota',
       'sunday': 'niedziela'
     };

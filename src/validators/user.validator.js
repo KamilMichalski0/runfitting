@@ -13,6 +13,7 @@ exports.validate = (req, res, next) => {
     return next();
   }
 
+  console.error('[Validator] Validation errors found:', errors.array());
   const extractedErrors = errors.array().map(err => ({ [err.path]: err.msg }));
   return next(new AppError('Błąd walidacji danych', 400, true, { errors: extractedErrors }));
 };

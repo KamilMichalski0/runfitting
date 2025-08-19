@@ -61,7 +61,11 @@ class GeminiService {
 
   // Method for standardized logging within the service
   log(message, data) {
-    console.log(message, data !== undefined ? data : '');
+    // Loguj tylko komunikaty związane z generowaniem planów
+    if (message.includes('GEMINI') || message.includes('PROMPT') || message.includes('ODPOWIEDŹ') || 
+        message.includes('===') || message.includes('Plan') || message.includes('parsowania')) {
+      console.log(message, data !== undefined ? data : '');
+    }
   }
 
   // Method for standardized error logging within the service
@@ -675,7 +679,7 @@ JEŚLI WYGENERUJESZ IDENTYCZNE TRENINGI = NATYCHMIASTOWE PRZEPISANIE!
       "focus": string,
       "days": [
         {
-          "day_name": string (WAŻNE: użyj DOKŁADNIE jednej z wartości: "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"),
+          "day_name": string (WAŻNE: użyj DOKŁADNIE jednej z wartości: "poniedzialek", "wtorek", "sroda", "czwartek", "piatek", "sobota", "niedziela"),
           "date": string (YYYY-MM-DD, data treningu - WAŻNE: oblicz na podstawie daty startu planu i dnia tygodnia),
           "workout": {
             "type": string (MUSI BYĆ RÓŻNY dla każdego dnia),
@@ -747,7 +751,7 @@ JEŚLI WYGENERUJESZ IDENTYCZNE TRENINGI = NATYCHMIASTOWE PRZEPISANIE!
 6. Każda notatka powinna być konkretna i możliwa do wykonania
 
 KRYTYCZNE WYMAGANIA:
-1. Pole day_name MUSI zawierać DOKŁADNIE jedną z wartości: "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"
+1. Pole day_name MUSI zawierać DOKŁADNIE jedną z wartości: "poniedzialek", "wtorek", "sroda", "czwartek", "piatek", "sobota", "niedziela"
 2. Nie używaj skrótów ani innych formatów nazw dni
 3. Zachowaj dokładnie podaną strukturę JSON dla pola workout
 4. Wszystkie pola numeryczne muszą być liczbami, nie stringami
@@ -1236,7 +1240,8 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
           const correctedDays = week.days.map((day, dayIndex) => {
             if (dayIndex < trainingDays.length) {
               const correctedDay = { ...day };
-              const originalDayName = day.day_name;
+              const originalDayName = day.day || day.day_name;
+              correctedDay.day = trainingDays[dayIndex];
               correctedDay.day_name = trainingDays[dayIndex];
               
               // Loguj poprawki
@@ -1252,7 +1257,7 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
           // Zachowaj tylko tyle dni ile użytkownik ma treningowych
           week.days = correctedDays.slice(0, trainingDays.length);
           
-          this.log(`✅ Tydzień ${week.week_num}: wymuszono dni ${week.days.map(d => d.day_name).join(', ')}`);
+          this.log(`✅ Tydzień ${week.week_num}: wymuszono dni ${week.days.map(d => d.day || d.day_name).join(', ')}`);
         }
 
         return week;
@@ -1329,7 +1334,7 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
     // Użyj dni treningowych użytkownika jeśli dostępne, inaczej fallback
     const daysToUse = trainingDays && Array.isArray(trainingDays) && trainingDays.length > 0 
       ? trainingDays 
-      : ['poniedziałek', 'środa', 'piątek', 'niedziela', 'wtorek', 'czwartek', 'sobota'];
+      : ['poniedzialek', 'sroda', 'piatek', 'niedziela', 'wtorek', 'czwartek', 'sobota'];
     
     if (!day || typeof day !== 'object') {
       const dayName = dayIndex < daysToUse.length ? daysToUse[dayIndex] : daysToUse[dayIndex % daysToUse.length];
@@ -1354,6 +1359,8 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
     // Przeniesienie danych z nowej struktury Gemini do oczekiwanej struktury frontend
     if (day.day_of_week && typeof day.day_of_week === 'string') {
       day.day_name = day.day_of_week.toLowerCase();
+    } else if (day.day && typeof day.day === 'string') {
+      day.day_name = day.day.toLowerCase();
     }
     if (day.duration_minutes && typeof day.duration_minutes === 'number') {
       day.workout.duration = day.duration_minutes;
@@ -1445,11 +1452,11 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
   _createDefaultDay(dayName, weekNumber = 1, dayIndex = 0) {
     // Mapowanie nazwy dnia na indeks
     const dayNameToIndex = {
-      'poniedziałek': 0, 'monday': 0,
+      'poniedzialek': 0, 'monday': 0,
       'wtorek': 1, 'tuesday': 1,
-      'środa': 2, 'wednesday': 2,
+      'sroda': 2, 'wednesday': 2,
       'czwartek': 3, 'thursday': 3,
-      'piątek': 4, 'friday': 4,
+      'piatek': 4, 'friday': 4,
       'sobota': 5, 'saturday': 5,
       'niedziela': 6, 'sunday': 6
     };
@@ -1574,15 +1581,15 @@ SPRAWDŹ PLAN PRZED WYSŁANIEM - CZY WSZYSTKIE DNI SĄ RÓŻNE?
    * @returns {Array} - Tablica dni
    */
   _createDefaultDays(weekNum, trainingDays = null) {
-    const defaultDays = trainingDays && trainingDays.length > 0 ? trainingDays : ['poniedziałek', 'środa', 'piątek'];
+    const defaultDays = trainingDays && trainingDays.length > 0 ? trainingDays : ['poniedzialek', 'sroda', 'piatek'];
     
     // Mapowanie nazw dni na indeksy tygodnia dla lepszej różnorodności
     const dayNameToIndex = {
-      'poniedziałek': 0, // Poniedziałek
+      'poniedzialek': 0, // Poniedzialek
       'wtorek': 1,       // Wtorek
-      'środa': 2,        // Środa  
+      'sroda': 2,        // Sroda  
       'czwartek': 3,     // Czwartek
-      'piątek': 4,       // Piątek
+      'piatek': 4,       // Piatek
       'sobota': 5,       // Sobota
       'niedziela': 6     // Niedziela
     };
@@ -1772,6 +1779,11 @@ Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON mu
    * @returns {Object} Plan tygodniowy
    */
   async generateWeeklyTrainingPlan(weeklyData) {
+    // FORCE LOG: Test czy metoda jest w ogóle wywoływana
+    console.log('🚨 [GEMINI-SERVICE] ROZPOCZĘCIE generateWeeklyTrainingPlan()');
+    console.log('🚨 [GEMINI-SERVICE] weeklyData userId:', weeklyData?.userId);
+    console.log('🚨 [GEMINI-SERVICE] weekNumber:', weeklyData?.weekNumber);
+    
     // DEBUG: Loguj kompletne dane otrzymane w Gemini Service
     this.log('=== GEMINI SERVICE: Otrzymane dane weeklyData ===', {
       weeklyData_keys: Object.keys(weeklyData),
@@ -1832,6 +1844,7 @@ Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON mu
         const prompt = this.prepareWeeklyPlanPrompt(weeklyData);
         
         // Pełne logowanie promptu dla debugowania
+        console.log(`🚨 [GEMINI-SERVICE] FORCE LOG - WYSYŁANIE PROMPTU DO GEMINI`);
         this.log(`\n=== PEŁNY PROMPT WYSYŁANY DO GEMINI ===`);
         this.log(prompt);
         this.log(`=== KONIEC PROMPTU ===\n`);
@@ -1878,17 +1891,21 @@ Odpowiedz WYŁĄCZNIE w formacie JSON, bez żadnego tekstu przed ani po. JSON mu
         
         const plan = await this.parseWeeklyPlanResponse(response, weeklyData);
         
-        // Próbuj zastosować spersonalizowane strefy tętna do planu
-        try {
-          const personalizedPlan = this._applyPersonalizedHeartRateZones(plan, weeklyData.userData);
-          this.log('Pomyślnie spersonalizowano strefy tętna');
-          return personalizedPlan;
-        } catch (personalizationError) {
-          this.error('Błąd personalizacji stref tętna, używam planu bez personalizacji:', {
-            message: personalizationError.message
-          });
-          return plan; // Zwróć plan bez personalizacji
-        }
+        // WYŁĄCZONE: Personalizacja stref tętna - Gemini sam powinien decydować o strefach HR
+        // try {
+        //   const personalizedPlan = this._applyPersonalizedHeartRateZones(plan, weeklyData.userData);
+        //   this.log('Pomyślnie spersonalizowano strefy tętna');
+        //   return personalizedPlan;
+        // } catch (personalizationError) {
+        //   this.error('Błąd personalizacji stref tętna, używam planu bez personalizacji:', {
+        //     message: personalizationError.message
+        //   });
+        //   return plan; // Zwróć plan bez personalizacji
+        // }
+        
+        // Zwracaj plan bezpośrednio z Gemini bez dodatkowej normalizacji
+        this.log('Używam planu z Gemini bez normalizacji stref tętna');
+        return plan;
 
       } catch (geminiError) {
         this.error(`\n⚠️ Błąd podczas próby ${attempt}/${maxRetries} generowania planu tygodniowego przez Gemini:`, {
@@ -2056,32 +2073,20 @@ Pamiętaj o dostosowaniu planu do:
    * @returns {string} Kontekst
    */
   buildWeeklyContext(weeklyData) {
-    // DEBUG: Sprawdź jakie dni treningowe są dostępne
-    console.log('🔍 DEBUG buildWeeklyContext - weeklyData.dniTreningowe:', weeklyData.dniTreningowe);
-    console.log('🔍 DEBUG buildWeeklyContext - wszystkie klucze weeklyData:', Object.keys(weeklyData));
-    
-    let context = `PROFIL BIEGACZA:
-- Imię: ${weeklyData.name}
-- Wiek: ${weeklyData.age} lat
-- Poziom: ${weeklyData.level}
-- Cel: ${weeklyData.goal}
-- Dni treningowe w tygodniu: ${weeklyData.daysPerWeek}`;
-
-    // Dodaj konkretne dni treningowe jeśli są dostępne
-    // Sprawdź różne możliwe nazwy pól
-    console.log('🔍 DEBUG Gemini buildWeeklyContext - weeklyData.dniTreningowe:', weeklyData.dniTreningowe);
-    console.log('🔍 DEBUG Gemini buildWeeklyContext - weeklyData.trainingDays:', weeklyData.trainingDays);
-    console.log('🔍 DEBUG Gemini buildWeeklyContext - weeklyData.userData?.dniTreningowe:', weeklyData.userData?.dniTreningowe);
-    console.log('🔍 DEBUG Gemini buildWeeklyContext - weeklyData.userData?.trainingDays:', weeklyData.userData?.trainingDays);
+    // Znajdź dni treningowe
     
     const trainingDays = weeklyData.dniTreningowe || weeklyData.trainingDays || weeklyData.userData?.dniTreningowe || weeklyData.userData?.trainingDays;
-    console.log('🔍 DEBUG Gemini buildWeeklyContext - final trainingDays:', trainingDays);
     
+    let context = `PROFIL BIEGACZA:
+- Imię: ${weeklyData.imieNazwisko || weeklyData.name || 'Nie określono'}
+- Wiek: ${weeklyData.wiek || weeklyData.age || 'Nie określono'} lat
+- Poziom: ${weeklyData.poziomZaawansowania || weeklyData.level || 'Nie określono'}
+- Cel: ${weeklyData.glownyCel || weeklyData.goal || 'Nie określono'}
+- Dni treningowe w tygodniu: ${weeklyData.daysPerWeek || (trainingDays && trainingDays.length) || 'Nie określono'}`;
+
+    // Dodaj konkretne dni treningowe jeśli są dostępne
     if (trainingDays && Array.isArray(trainingDays) && trainingDays.length > 0) {
       context += `\n- Wybrane dni treningowe: ${trainingDays.join(', ')}`;
-      console.log('✅ DEBUG Gemini: Dodano dni treningowe do kontekstu:', trainingDays.join(', '));
-    } else {
-      console.log('❌ DEBUG Gemini: Brak dni treningowych, użyje domyślnych');
     }
 
     context += `\n- Aktualny tygodniowy dystans: ${weeklyData.weeklyDistance} km
@@ -2133,7 +2138,7 @@ Pamiętaj o dostosowaniu planu do:
       
       this.log(`\n=== PRZED WALIDACJĄ I NAPRAWĄ ===`);
       this.log('Dni treningowe do użycia:', trainingDays);
-      this.log('Plan przed naprawą - dni z pierwszego tygodnia:', planData?.plan_weeks?.[0]?.days?.map(d => d.day_name));
+      this.log('Plan przed naprawą - dni z pierwszego tygodnia:', planData?.plan_weeks?.[0]?.days?.map(d => d.day || d.day_name));
       this.log(`================================\n`);
       
       // Ulepszona walidacja i naprawa planu z rzeczywistymi dniami treningowymi
@@ -2217,8 +2222,16 @@ Pamiętaj o dostosowaniu planu do:
     // Oblicz spersonalizowane strefy tętna
     const personalizedZones = this._calculateHeartRateZones(userData);
     
+    console.log('🎯 [DEBUG] Obliczone strefy tętna dla użytkownika:', personalizedZones);
+    
     // Przejdź przez wszystkie tygodnie i dni treningowe
     const updatedPlan = JSON.parse(JSON.stringify(plan)); // Deep copy
+    
+    console.log('🎯 [DEBUG] Plan przed personalizacją stref tętna:', JSON.stringify(plan.plan_weeks[0]?.days?.map(d => ({
+      day: d.day_name,
+      type: d.workout?.type,
+      original_hr: d.workout?.target_heart_rate
+    })), null, 2));
     
     updatedPlan.plan_weeks.forEach(week => {
       if (week.days && Array.isArray(week.days)) {
@@ -2228,20 +2241,33 @@ Pamiętaj o dostosowaniu planu do:
             
             // Mapuj zakres tętna do odpowiedniej strefy
             let targetZone;
+            let zoneUsed;
             if (currentHR.min >= 100 && currentHR.max <= 120) {
               targetZone = personalizedZones.zone1; // Regeneracja
+              zoneUsed = 'zone1';
             } else if (currentHR.min >= 115 && currentHR.max <= 135) {
               targetZone = personalizedZones.zone2; // Łatwe tempo
+              zoneUsed = 'zone2';
             } else if (currentHR.min >= 130 && currentHR.max <= 150) {
               targetZone = personalizedZones.zone2; // Łatwe tempo (często używane)
+              zoneUsed = 'zone2';
             } else if (currentHR.min >= 120 && currentHR.max <= 140) {
               targetZone = personalizedZones.zone2; // Łatwe tempo
+              zoneUsed = 'zone2';
             } else if (currentHR.min >= 125 && currentHR.max <= 145) {
               targetZone = personalizedZones.zone2; // Łatwe tempo
+              zoneUsed = 'zone2';
             } else {
               // Domyślnie użyj strefy 2 dla większości treningów
               targetZone = personalizedZones.zone2;
+              zoneUsed = 'zone2 (default)';
             }
+            
+            console.log(`🎯 [DEBUG] Mapowanie HR dla ${day.day_name} - ${day.workout?.type}:`, {
+              original: currentHR,
+              mapped_to: zoneUsed,
+              new_hr: { min: targetZone.min, max: targetZone.max }
+            });
             
             // Aktualizuj tylko jeśli mamy spersonalizowane strefy
             if (targetZone) {
@@ -2255,6 +2281,13 @@ Pamiętaj o dostosowaniu planu do:
       }
     });
 
+    console.log('🎯 [DEBUG] Plan po personalizacji stref tętna:', JSON.stringify(updatedPlan.plan_weeks[0]?.days?.map(d => ({
+      day: d.day_name,
+      type: d.workout?.type,
+      final_hr: d.workout?.target_heart_rate
+    })), null, 2));
+
+    this.log('Pomyślnie spersonalizowano strefy tętna');
     return updatedPlan;
   }
 }

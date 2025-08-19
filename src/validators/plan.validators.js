@@ -142,7 +142,7 @@ const formValidators = {
         }
         return true;
       }),
-    body('dniTreningowe.*').isIn(['poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota', 'niedziela']).withMessage('Nieprawidłowa nazwa dnia treningowego.'),
+    body('dniTreningowe.*').isIn(['poniedzialek', 'wtorek', 'sroda', 'czwartek', 'piatek', 'sobota', 'niedziela']).withMessage('Nieprawidłowa nazwa dnia treningowego.'),
     // Walidacja czasu treningu z uwzględnieniem poziomu zaawansowania
     body('czasTreningu').optional({ checkFalsy: true }).isInt({ min: 15, max: 180 }).withMessage('Preferowany czas treningu musi być liczbą między 15 a 180 minut.')
       .custom((value, { req }) => {

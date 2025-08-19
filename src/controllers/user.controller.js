@@ -222,6 +222,9 @@ exports.getProfile = async (req, res, next) => {
 exports.updateProfile = async (req, res, next) => {
   try {
     console.log(`[updateProfile] *** PATCH REQUEST RECEIVED ***`);
+    console.log(`[updateProfile] req.user exists:`, !!req.user);
+    console.log(`[updateProfile] req.user.sub:`, req.user?.sub);
+    console.log(`[updateProfile] req.user keys:`, req.user ? Object.keys(req.user) : 'none');
     console.log(`[updateProfile] Starting profile update for user: ${req.user?.sub}`);
     console.log(`[updateProfile] Request body:`, JSON.stringify(req.body, null, 2));
 
