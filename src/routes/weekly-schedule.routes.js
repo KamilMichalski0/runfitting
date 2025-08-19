@@ -161,6 +161,18 @@ router.post('/force-process', async (req, res) => {
 });
 
 /**
+ * GET /api/weekly-schedule/debug-user
+ * Debug endpoint to check user schedule status
+ */
+router.get('/debug-user', weeklyScheduleController.debugUserSchedule);
+
+/**
+ * POST /api/weekly-schedule/create-fallback
+ * Create fallback schedule for user (debug endpoint)
+ */
+router.post('/create-fallback', weeklyScheduleController.createFallbackSchedule);
+
+/**
  * GET /api/weekly-schedule/notifications
  * Server-Sent Events endpoint dla powiadomień w czasie rzeczywistym
  */

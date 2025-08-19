@@ -720,16 +720,22 @@ class WeeklyPlanDeliveryService {
   }
 
   /**
-   * Pobiera harmonogram użytkownika
+   * Pobiera harmonogram użytkownika z automatycznym fallbackiem
    * @param {string} userId - ID użytkownika
+   * @param {boolean} createIfMissing - Czy utworzyć harmonogram jeśli nie istnieje
    * @returns {Object} Harmonogram użytkownika
    */
-  async getUserSchedule(userId) {
+  async getUserSchedule(userId, createIfMissing = false) {
     try {
       const schedule = await WeeklyPlanSchedule.findOne({
         userId,
         isActive: true
       }).populate('recentPlans.planId');
+
+      if (!schedule && createIfMissing) {
+        logInfo(`Tworzenie harmonogramu fallback dla użytkownika: ${userId}`);
+        return await this._createFallbackSchedule(userId);
+      }
 
       if (!schedule) {
         throw new AppError('Nie znaleziono aktywnego harmonogramu dla użytkownika', 404);
@@ -739,6 +745,109 @@ class WeeklyPlanDeliveryService {
     } catch (error) {
       logError('Błąd podczas pobierania harmonogramu użytkownika', error);
       throw error;
+    }
+  }
+
+  /**
+   * Pobiera harmonogram użytkownika z automatycznym fallbackiem
+   * @param {string} userId - ID użytkownika
+   * @returns {Object} Harmonogram użytkownika (zawsze zwraca harmonogram)
+   */
+  async getUserScheduleWithFallback(userId) {
+    try {
+      const schedule = await WeeklyPlanSchedule.findOne({
+        userId,
+        isActive: true
+      }).populate('recentPlans.planId');
+
+      if (!schedule) {
+        logInfo(`Brak harmonogramu dla użytkownika ${userId}, tworzenie fallback`);
+        return await this._createFallbackSchedule(userId);
+      }
+
+      return schedule;
+    } catch (error) {
+      logError('Błąd podczas pobierania harmonogramu użytkownika', error);
+      // Jeśli wystąpi błąd, spróbuj utworzyć fallback
+      try {
+        return await this._createFallbackSchedule(userId);
+      } catch (fallbackError) {
+        logError('Błąd podczas tworzenia fallback harmonogramu', fallbackError);
+        throw error; // Rzuć oryginalny błąd
+      }
+    }
+  }
+
+  /**
+   * Tworzy harmonogram fallback na podstawie danych z formularza użytkownika
+   * @param {string} userId - ID użytkownika
+   * @returns {Object} Nowy harmonogram
+   * @private
+   */
+  async _createFallbackSchedule(userId) {
+    try {
+      const TrainingFormSubmission = require('../models/running-form.model');
+      
+      // Znajdź najnowszy formularz użytkownika z wypełnionymi dniami treningowymi
+      const latestForm = await TrainingFormSubmission.findOne({
+        userId,
+        dniTreningowe: { $exists: true, $ne: [], $ne: null }
+      }).sort({ createdAt: -1 });
+
+      if (!latestForm) {
+        throw new AppError('Brak danych formularza do utworzenia harmonogramu fallback', 400);
+      }
+
+      const formData = latestForm.toObject();
+      logInfo(`Tworzenie harmonogramu fallback z formularza`, {
+        userId,
+        formId: latestForm._id,
+        dniTreningowe: formData.dniTreningowe
+      });
+
+      // Mapuj dane z formularza na profil użytkownika
+      const trainingPlanController = require('../controllers/training-plan.controller');
+      const userProfile = trainingPlanController.mapFormToUserProfile(formData);
+
+      // Utwórz harmonogram fallback
+      const schedule = new WeeklyPlanSchedule({
+        userId: userId,
+        userProfile: userProfile,
+        deliveryFrequency: 'weekly',
+        deliveryDay: 'sunday',
+        deliveryTime: '18:00',
+        timezone: 'Europe/Warsaw',
+        isActive: true,
+        nextDeliveryDate: new Date(Date.now() + 24 * 60 * 60 * 1000), // jutro
+        progressTracking: {
+          weekNumber: 1,
+          currentPhase: 'base',
+          totalWeeksDelivered: 0,
+          lastWeeklyDistance: 0,
+          progressionRate: 1.0
+        },
+        longTermGoal: {
+          remainingWeeks: 12,
+          targetDate: new Date(Date.now() + 12 * 7 * 24 * 60 * 60 * 1000)
+        },
+        adaptationSettings: {
+          allowAutoAdjustments: true,
+          maxWeeklyIncrease: 0.1,
+          minRecoveryWeeks: 4
+        },
+        recentPlans: []
+      });
+
+      await schedule.save();
+      logInfo(`Utworzono harmonogram fallback dla użytkownika ${userId}`, {
+        scheduleId: schedule._id,
+        weekNumber: schedule.progressTracking.weekNumber
+      });
+
+      return schedule;
+    } catch (error) {
+      logError('Błąd podczas tworzenia harmonogramu fallback', error);
+      throw new AppError('Nie udało się utworzyć harmonogramu dla użytkownika', 500);
     }
   }
 

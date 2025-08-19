@@ -127,8 +127,8 @@ WeeklyScheduleController.prototype.getSchedule = async function(req, res, next) 
     
     console.log(`🔍 [SCHEDULE-CONTROLLER] Getting schedule for user: ${userId}`);
     
-    // Pobierz harmonogram - BEZ fallbacków
-    const schedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
+    // Pobierz harmonogram - jeśli nie ma, stwórz go
+    const schedule = await this.weeklyPlanDeliveryService.getUserScheduleWithFallback(userId);
     
     // Wyciągnij aktualny plan z recentPlans
     let currentPlan = null;
@@ -142,7 +142,7 @@ WeeklyScheduleController.prototype.getSchedule = async function(req, res, next) 
     }
     
     if (!currentPlan) {
-      console.log(`🔍 [SCHEDULE-CONTROLLER] PLAN SOURCE: Brak planu w harmonogramie`);
+      console.log(`🔍 [SCHEDULE-CONTROLLER] PLAN SOURCE: Brak planu w harmonogramie${schedule ? ' (harmonogram istnieje)' : ''}`);
     }
 
     res.json({
@@ -151,7 +151,8 @@ WeeklyScheduleController.prototype.getSchedule = async function(req, res, next) 
         schedule,
         currentPlan,
         pendingReview: null,
-        upcomingDelivery: schedule?.nextDeliveryDate || null
+        upcomingDelivery: schedule?.nextDeliveryDate || null,
+        fallbackCreated: schedule._id === undefined ? false : schedule._id.toString().includes('fallback')
       }
     });
   } catch (error) {
@@ -160,7 +161,8 @@ WeeklyScheduleController.prototype.getSchedule = async function(req, res, next) 
     
     if (error instanceof AppError) {
       return res.status(error.statusCode).json({
-        error: error.message
+        error: error.message,
+        needsSetup: error.statusCode === 400 && error.message.includes('Brak danych formularza')
       });
     }
     
@@ -314,8 +316,8 @@ WeeklyScheduleController.prototype.updateProgress = async function(req, res, nex
     // Jeśli zaktualizowano postęp, wygeneruj nowy plan w kolejce Redis
     if (result.scheduleUpdated || result.updatedPlan) {
       try {
-        // Pobierz harmonogram dla kolejki
-        const schedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
+        // Pobierz harmonogram dla kolejki (z fallbackiem)
+        const schedule = await this.weeklyPlanDeliveryService.getUserScheduleWithFallback(userId);
         
         jobId = await aiJobService.queueWeeklyPlanGeneration(
           userId,
@@ -754,28 +756,9 @@ WeeklyScheduleController.prototype.generateNewPlan = async function(req, res, ne
         userProfile = trainingPlanController.mapFormToUserProfile(formData);
         logInfo(`Using profile from latest form data for new plan: ${userProfile.name}, dni: ${JSON.stringify(userProfile.dniTreningowe)}`);
       } else {
-        // Fallback: spróbuj istniejący harmonogram tylko gdy brak formularza
-        try {
-          const existingSchedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
-          if (existingSchedule && existingSchedule.userProfile) {
-            userProfile = { ...userProfile, ...existingSchedule.userProfile };
-            logInfo(`No form found - using existing schedule profile: ${JSON.stringify(userProfile)}`);
-          } else {
-            logInfo('No saved form data and no existing schedule found - cannot generate plan');
-            return res.status(400).json({
-              status: 'error',
-              error: 'Brak danych formularza biegowego. Proszę najpierw wypełnić formularz.',
-              details: 'Nie znaleziono zapisanego formularza ani harmonogramu dla tego użytkownika.'
-            });
-          }
-        } catch (scheduleError) {
-          logError('Error fetching existing schedule:', scheduleError);
-          return res.status(400).json({
-            status: 'error',
-            error: 'Brak danych formularza biegowego. Proszę najpierw wypełnić formularz.',
-            details: 'Nie można pobrać danych użytkownika.'
-          });
-        }
+        // Brak formularza - stwórz podstawowy harmonogram
+        logInfo('No form found - creating basic schedule with default profile');
+        // Zostaw domyślny userProfile, system stworzy harmonogram automatycznie
       }
     } catch (formError) {
       logError('Error fetching form data for new plan:', formError);
@@ -1008,6 +991,129 @@ WeeklyScheduleController.prototype.getJobStatus = async function(req, res, next)
     return res.status(500).json({
       status: 'error',
       error: 'Wystąpił błąd podczas sprawdzania statusu zadania'
+    });
+  }
+};
+
+/**
+ * Debug endpoint to check user schedule status
+ */
+WeeklyScheduleController.prototype.debugUserSchedule = async function(req, res, next) {
+  try {
+    const userId = req.user.sub;
+    const { checkForm = false } = req.query;
+    
+    logInfo(`Debug schedule check for user: ${userId}`);
+    
+    const result = {
+      userId,
+      timestamp: new Date().toISOString(),
+      schedule: null,
+      form: null,
+      issues: []
+    };
+    
+    // Check for active schedule
+    try {
+      const WeeklyPlanSchedule = require('../models/weekly-plan-schedule.model');
+      result.schedule = await WeeklyPlanSchedule.findOne({
+        userId,
+        isActive: true
+      }).lean();
+      
+      if (!result.schedule) {
+        result.issues.push('No active WeeklyPlanSchedule found');
+      } else {
+        result.schedule.hasValidProfile = !!(result.schedule.userProfile?.dniTreningowe?.length > 0);
+      }
+    } catch (error) {
+      result.issues.push(`Schedule query error: ${error.message}`);
+    }
+    
+    // Check form data if requested
+    if (checkForm) {
+      try {
+        const TrainingFormSubmission = require('../models/running-form.model');
+        result.form = await TrainingFormSubmission.findOne({
+          userId,
+          dniTreningowe: { $exists: true, $ne: [], $ne: null }
+        }).sort({ createdAt: -1 }).lean();
+        
+        if (!result.form) {
+          result.issues.push('No valid form submission with training days found');
+        }
+        
+        // Check for multiple forms
+        const allForms = await TrainingFormSubmission.find({ userId }).sort({ createdAt: -1 });
+        result.totalForms = allForms.length;
+        
+        if (allForms.length > 1) {
+          result.issues.push(`User has ${allForms.length} form submissions (should have only 1)`);
+        }
+      } catch (error) {
+        result.issues.push(`Form query error: ${error.message}`);
+      }
+    }
+    
+    // Determine status
+    result.status = result.issues.length === 0 ? 'healthy' : 'needs_attention';
+    result.canCreateFallback = !result.schedule && result.form;
+    
+    res.json({
+      status: 'success',
+      data: result
+    });
+    
+  } catch (error) {
+    logError('Debug schedule check error', error);
+    
+    return res.status(500).json({
+      status: 'error',
+      error: 'Debug check failed',
+      details: error.message
+    });
+  }
+};
+
+/**
+ * Create fallback schedule for user (debug endpoint)
+ */
+WeeklyScheduleController.prototype.createFallbackSchedule = async function(req, res, next) {
+  try {
+    const userId = req.user.sub;
+    
+    logInfo(`Creating fallback schedule for user: ${userId}`);
+    
+    const schedule = await this.weeklyPlanDeliveryService._createFallbackSchedule(userId);
+    
+    res.json({
+      status: 'success',
+      data: {
+        message: 'Fallback schedule created successfully',
+        scheduleId: schedule._id,
+        weekNumber: schedule.progressTracking.weekNumber,
+        userProfile: {
+          name: schedule.userProfile.name,
+          daysPerWeek: schedule.userProfile.daysPerWeek,
+          trainingDays: schedule.userProfile.dniTreningowe
+        }
+      }
+    });
+    
+  } catch (error) {
+    logError('Create fallback schedule error', error);
+    
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        status: 'error',
+        error: error.message
+      });
+    }
+    
+    return res.status(500).json({
+      status: 'error',
+      error: 'Failed to create fallback schedule',
+      details: error.message
     });
   }
 };

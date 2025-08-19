@@ -306,7 +306,7 @@ class TrainingPlanController {
         res.status(201).json({
           status: 'success',
           data: {
-            formId: newFormSubmission._id,
+            formId: formSubmission._id,
             scheduleId: schedule._id,
             firstPlanId: firstWeeklyPlan._id,
             message: 'Formularz zapisany i system dostaw planów uruchomiony pomyślnie!',
