@@ -434,13 +434,31 @@ exports.updateProfile = async (req, res, next) => {
         } else {
           console.log(`[updateProfile] No existing form found, creating new one`);
           
-          // Create new form only if none exists
-          runningForm = new TrainingFormSubmission({
+          // Create new form with required fields from user profile
+          const formDataWithDefaults = {
             ...filteredRunningFormUpdate,
             userId: req.user.sub,
-            status: 'nowy'
-          });
+            status: 'nowy',
+            // Required fields from user profile
+            dateOfBirth: updatedUser.dateOfBirth || new Date('1990-01-01'),
+            plec: updatedUser.gender === 'male' ? 'Mężczyzna' : 
+                  updatedUser.gender === 'female' ? 'Kobieta' : 'Inna',
+            wzrost: updatedUser.height || 170,
+            masaCiala: updatedUser.weight || 70,
+            // Required system fields with defaults
+            glownaBariera: 'brak_czasu',
+            preferowanyCzasTreningu: 'dowolnie',
+            chronotyp: 'posredni',
+            godzinySnuOd: '22:00',
+            godzinySnuDo: '06:00',
+            // Ensure dniTreningowe is always an array
+            dniTreningowe: Array.isArray(filteredRunningFormUpdate.dniTreningowe) ? 
+                          filteredRunningFormUpdate.dniTreningowe : ['poniedzialek', 'sroda', 'piatek']
+          };
+          
+          runningForm = new TrainingFormSubmission(formDataWithDefaults);
           await runningForm.save();
+          console.log(`[updateProfile] Created new form with ID: ${runningForm._id}`);
         }
         
         const updatedForm = runningForm;

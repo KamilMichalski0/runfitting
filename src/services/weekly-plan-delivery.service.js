@@ -795,7 +795,9 @@ class WeeklyPlanDeliveryService {
       }).sort({ createdAt: -1 });
 
       if (!latestForm) {
-        throw new AppError('Brak danych formularza do utworzenia harmonogramu fallback', 400);
+        logInfo(`Brak formularza dla ${userId}, tworzenie podstawowego harmonogramu`);
+        // Stwórz domyślny harmonogram dla nowego użytkownika
+        return this._createBasicSchedule(userId);
       }
 
       const formData = latestForm.toObject();
@@ -849,6 +851,40 @@ class WeeklyPlanDeliveryService {
       logError('Błąd podczas tworzenia harmonogramu fallback', error);
       throw new AppError('Nie udało się utworzyć harmonogramu dla użytkownika', 500);
     }
+  }
+
+  /**
+   * Tworzy podstawowy harmonogram dla nowego użytkownika
+   * @param {string} userId - ID użytkownika
+   * @returns {Object} - Nowy harmonogram
+   */
+  async _createBasicSchedule(userId) {
+    logInfo(`Tworzenie podstawowego harmonogramu dla nowego użytkownika: ${userId}`);
+    
+    const WeeklyPlanSchedule = require('../models/weekly-plan-schedule.model');
+    
+    const basicSchedule = new WeeklyPlanSchedule({
+      userId,
+      userProfile: {
+        name: 'User',
+        age: 30,
+        experienceLevel: 'beginner',
+        mainGoal: 'start_running',
+        daysPerWeek: 3,
+        dniTreningowe: ['poniedzialek', 'sroda', 'piatek'], // domyślne dni
+        trainingDays: ['monday', 'wednesday', 'friday']
+      },
+      isActive: true,
+      currentWeekNumber: 1,
+      deliveryDayOfWeek: 1, // poniedziałek
+      deliveryTime: '06:00',
+      nextDeliveryDate: new Date(Date.now() + 24 * 60 * 60 * 1000), // jutro
+      recentPlans: []
+    });
+    
+    await basicSchedule.save();
+    logInfo(`Podstawowy harmonogram utworzony dla: ${userId}`);
+    return basicSchedule;
   }
 
   /**

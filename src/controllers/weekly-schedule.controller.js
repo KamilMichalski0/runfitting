@@ -127,8 +127,23 @@ WeeklyScheduleController.prototype.getSchedule = async function(req, res, next) 
     
     console.log(`🔍 [SCHEDULE-CONTROLLER] Getting schedule for user: ${userId}`);
     
-    // Pobierz harmonogram - jeśli nie ma, stwórz go
-    const schedule = await this.weeklyPlanDeliveryService.getUserScheduleWithFallback(userId);
+    // Sprawdź czy użytkownik ma harmonogram
+    let schedule;
+    try {
+      schedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
+    } catch (error) {
+      if (error.statusCode === 404) {
+        return res.status(200).json({
+          success: true,
+          message: 'Brak harmonogramu - wypełnij formularz treningowy',
+          data: {
+            hasSchedule: false,
+            requiresOnboarding: true
+          }
+        });
+      }
+      throw error;
+    }
     
     // Wyciągnij aktualny plan z recentPlans
     let currentPlan = null;
@@ -485,7 +500,7 @@ WeeklyScheduleController.prototype.manualDelivery = async function(req, res, nex
       };
     } else {
       logInfo('Using real schedule for week progression');
-      // Pobierz prawdziwy harmonogram użytkownika (dla kolejnego tygodnia)
+      // Pobierz harmonogram użytkownika
       schedule = await this.weeklyPlanDeliveryService.getUserSchedule(userId);
       
       if (!schedule) {
@@ -756,9 +771,13 @@ WeeklyScheduleController.prototype.generateNewPlan = async function(req, res, ne
         userProfile = trainingPlanController.mapFormToUserProfile(formData);
         logInfo(`Using profile from latest form data for new plan: ${userProfile.name}, dni: ${JSON.stringify(userProfile.dniTreningowe)}`);
       } else {
-        // Brak formularza - stwórz podstawowy harmonogram
-        logInfo('No form found - creating basic schedule with default profile');
-        // Zostaw domyślny userProfile, system stworzy harmonogram automatycznie
+        // Brak formularza - nie można wygenerować spersonalizowanego planu
+        logInfo('No form found - cannot generate personalized plan');
+        return res.status(400).json({
+          status: 'error',
+          error: 'Brak danych formularza biegowego. Proszę najpierw wypełnić formularz.',
+          details: 'Nie znaleziono zapisanego formularza dla tego użytkownika.'
+        });
       }
     } catch (formError) {
       logError('Error fetching form data for new plan:', formError);

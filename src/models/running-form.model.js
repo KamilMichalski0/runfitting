@@ -71,6 +71,13 @@ const trainingFormSubmissionSchema = new Schema({
   kontuzje: { type: Boolean },
   poprawaTechnikiBiegu: { type: Boolean },
   cwiczeniaUzupelniajace: { type: Boolean },
+  
+  // Additional training preference fields for profile forms
+  doswiadczenieBiegowe: { type: String, trim: true }, // Running experience description
+  miejsceTreningu: { type: String, trim: true }, // Preferred training location
+  preferencjeTempa: { type: String, trim: true }, // Pace preferences
+  motywacjaDoTreningow: { type: String, trim: true }, // Training motivation
+  wsparcie: { type: String, trim: true }, // Support type
 
   // --- SEKCJA 2C: Plan ogólno-sprawnościowy --- (Fields optional unless glownyCel matches)
   obecnaAktywnosc: { type: String, enum: ['siedzacy', 'lekko_aktywny', 'umiarkowanie_aktywny', 'aktywny'] },
